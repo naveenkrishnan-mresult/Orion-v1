@@ -1,2 +1,2 @@
-#Streamli
+**#Streamlit**
 streamlit run landing.py
