@@ -1,4 +1,2 @@
-# Orion-v1
-Orion SDLC
-##Streamli
+#Streamli
 streamlit run landing.py
