@@ -366,8 +366,11 @@ elif st.session_state.step == "export":
     final_output = st.session_state.system.export_final_output(st.session_state.state)
     filename = st.session_state.system.save_output_to_file(final_output)
     bot_message(f"Process completed successfully! Output saved to: {filename}")
-    st.session_state.step = "done"
-    st.rerun()
+    container=st.container()
+
+    with container.expander("Output Preview", expanded=True):
+        st.markdown(final_output)
+
 
 # elif st.session_state.step == "done":
 #     with st.form(key="done_form", clear_on_submit=True):
