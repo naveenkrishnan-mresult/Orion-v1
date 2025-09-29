@@ -12,10 +12,9 @@ from openai import OpenAI
 import os
 from dotenv import load_dotenv
 from jira import JIRA
-JIRA_SERVER = "https://mresult.atlassian.net/"
-JIRA_EMAIL = "naveen.krishnan@mresult.com"
-JIRA_API_TOKEN = "ATATT3xFfGF0v1-Yv9JiG1mlpob5MmFKA5L7raJ4RC20M5qgM8AoFPCbgKDiM80_2QaBXMk6PZEWYsBycSsZqeoSO7TcNc3voHRfDH_8TDmIXw02Ac5IwqkdnX6fMr-ed-C5LihFqIID5k8YhnPTUJPci35FPUFdEW8pPCFsgXkGO58Bqpbt97c=07396091"
-
+JIRA_SERVER = os.getenv("JIRA_SERVER")
+JIRA_EMAIL = os.getenv("JIRA_EMAIL")
+JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN")
 # Create Jira connection
 jira = JIRA(
     server=JIRA_SERVER,
