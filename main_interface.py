@@ -60,6 +60,30 @@ st.markdown("""
         align-self: flex-end;
         border-top-right-radius: 0;
     }
+    .typing {
+        background-color: #5d23b6;
+        color: white;
+        align-self: flex-start;
+        border-top-left-radius: 0;
+        animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+        0%, 100% { opacity: 0.7; }
+        50% { opacity: 1; }
+    }
+    .typing-dots {
+        display: inline-block;
+    }
+    .typing-dots::after {
+        content: '.';
+        animation: dots 1.5s steps(4, end) infinite;
+    }
+    @keyframes dots {
+        0%, 20% { content: '.'; }
+        40% { content: '..'; }
+        60% { content: '...'; }
+        80%, 100% { content: ''; }
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -109,7 +133,15 @@ if "agents" not in st.session_state:
     }
 if "question_idx" not in st.session_state:
     st.session_state.question_idx = 0
+if "typing" not in st.session_state:
+    st.session_state.typing = False
+if "pending_response" not in st.session_state:
+    st.session_state.pending_response = None
 
+def show_typing_with_response(response_text, next_step=None):
+    st.session_state.typing = True
+    st.session_state.pending_response = {"text": response_text, "step": next_step}
+    
 def bot_message(text):
     st.session_state.messages.append({"role": "bot", "content": text})
 
@@ -121,6 +153,21 @@ for msg in st.session_state.messages:
     role_class = "user" if msg["role"] == "user" else "bot"
     st.markdown(f'<div class="msg-bubble {role_class}">{msg["content"]}</div>', unsafe_allow_html=True)
 
+# Show typing indicator and handle pending response
+if st.session_state.typing:
+    st.markdown('<div class="msg-bubble typing">Orion is typing<span class="typing-dots"></span></div>', unsafe_allow_html=True)
+    # Process pending response after a brief delay
+    if st.session_state.pending_response:
+        import time
+        time.sleep(0.5)  # Brief delay for typing effect
+        response_data = st.session_state.pending_response
+        st.session_state.typing = False
+        st.session_state.pending_response = None
+        bot_message(response_data["text"])
+        if response_data["step"]:
+            st.session_state.step = response_data["step"]
+        st.rerun()
+
 # Chat input
 user_input = st.chat_input("Type your response...")
 
@@ -130,18 +177,15 @@ if st.session_state.step == "hlr":
         st.session_state.hlr = user_input
         user_message(user_input)
         keyword = ["create", "task", "help","issue", "i want to create", "apply", "generate","make"]
-        if any([i in user_input.lower() for i in keyword]):# or "task" in user_input.lower() or "issue" in user_input.lower() or "i want to create" in user_input.lower():
-            bot_message("I can either work with the existing workflow or create a new one for you — which would you prefer?")
-            st.session_state.step = "start"
-            st.rerun()
+        if any([i in user_input.lower() for i in keyword]):
+            show_typing_with_response("I can either work with the existing workflow or create a new one for you — which would you prefer?", "start")
         else:
-            bot_message("I can help with task creation. Please type 'create a task' to proceed.")
-            st.rerun()
+            show_typing_with_response("I can help with task creation. Please type 'create a task' to proceed.")
+        st.rerun()
 elif st.session_state.step == "start":
     if user_input:
         user_message(user_input)
-        bot_message("Choose your workflow:")
-        st.session_state.step = "workflow_choice"
+        show_typing_with_response("Choose your workflow:", "workflow_choice")
         st.rerun()
     else:
         st.markdown("<b>Choose workflow:</b>", unsafe_allow_html=True)
@@ -150,15 +194,13 @@ elif st.session_state.step == "start":
             if st.button("Work with existing JIRA project", use_container_width=True):
                 st.session_state.workflow_state["workflow_type"] = "existing"
                 user_message("Work with existing JIRA project")
-                bot_message("Let me fetch your JIRA projects...")
-                st.session_state.step = "jira_projects"
+                show_typing_with_response("Let me fetch your JIRA projects...", "jira_projects")
                 st.rerun()
         with col2:
             if st.button("Create new requirement", use_container_width=True):
                 st.session_state.workflow_state["workflow_type"] = "new"
                 user_message("Create new requirement")
-                bot_message("Please enter your High-Level Requirement:")
-                st.session_state.step = "hlr_input"
+                show_typing_with_response("Please enter your High-Level Requirement:", "hlr_input")
                 st.rerun()
 
 elif st.session_state.step == "jira_projects":
@@ -213,8 +255,7 @@ elif st.session_state.step == "hlr_input":
     if user_input:
         st.session_state.workflow_state["hlr"] = user_input
         user_message(user_input)
-        bot_message("Analyzing your requirement...")
-        st.session_state.step = "analyze"
+        show_typing_with_response("Analyzing your requirement...", "analyze")
         st.rerun()
 
 elif st.session_state.step == "analyze":
