@@ -101,493 +101,78 @@ class JIRAIssue:
     status: str
     project_key: str
 
+def strip_code_fences(text: str) -> str:
+    return re.sub(r"^```[a-zA-Z]*\n|\n```$", "", text.strip())
+
+class JiraState(LangGraphTypedDict):
+    jira_task: str
+    jira_task_output: dict
+
 class JiraIntegrationAgent:
-    """Truly agentic JIRA integration using OpenAI function calling"""
-    
     def __init__(self):
-        # Setup JIRA
+        # Original JIRA integration (REST API)
         self.server = os.getenv('JIRA_SERVER', '').rstrip('/')
         email = os.getenv('JIRA_EMAIL', '')
         api_token = os.getenv('JIRA_API_TOKEN', '')
         
         if self.server and email and api_token:
+            auth_string = f"{email}:{api_token}"
+            auth_b64 = base64.b64encode(auth_string.encode('ascii')).decode('ascii')
+            self.headers = {
+                'Authorization': f'Basic {auth_b64}',
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            }
+            
+            # Enhanced JIRA integration using jira-python library
             try:
                 self.jira_client = JIRA(
                     server=self.server,
                     basic_auth=(email, api_token)
                 )
-                logger.info("JIRA client initialized successfully")
+                logger.info("JIRA integration configured successfully with both REST API and jira-python")
             except Exception as e:
-                logger.error(f"Failed to initialize JIRA client: {e}")
+                logger.warning(f"jira-python client failed to initialize: {e}, falling back to REST API only")
                 self.jira_client = None
         else:
+            self.headers = None
             self.jira_client = None
-            logger.warning("JIRA credentials not configured")
-        
-        # Setup OpenAI
-        api_key = os.getenv('OPENAI_API_KEY')
-        if api_key and api_key.startswith('"') and api_key.endswith('"'):
-            api_key = api_key[1:-1]
-        self.openai_client = OpenAI(api_key=api_key)
-        
-        # Define comprehensive tools for the agent
-        self.tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": "list_all_projects",
-                    "description": "Get all JIRA projects with their keys, names, and descriptions",
-                    "parameters": {"type": "object", "properties": {}}
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_project_details",
-                    "description": "Get detailed information about a specific JIRA project",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "project_key": {"type": "string", "description": "Project key (e.g., 'PROJ')"}
-                        },
-                        "required": ["project_key"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "search_issues",
-                    "description": "Search JIRA issues using JQL query",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "jql": {"type": "string", "description": "JQL query string"},
-                            "max_results": {"type": "integer", "default": 100, "description": "Maximum number of results"}
-                        },
-                        "required": ["jql"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_project_issues_detailed",
-                    "description": "Get all issues from a project with comprehensive details including assignee, priority, dates",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "project_key": {"type": "string", "description": "Project key"},
-                            "max_results": {"type": "integer", "default": 100}
-                        },
-                        "required": ["project_key"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "analyze_project_patterns",
-                    "description": "Analyze project patterns including issue type distribution, status distribution, and common themes",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "project_key": {"type": "string", "description": "Project key"}
-                        },
-                        "required": ["project_key"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_issues_by_type",
-                    "description": "Get issues filtered by type (Epic, Story, Task, Bug, etc.)",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "project_key": {"type": "string", "description": "Project key"},
-                            "issue_type": {"type": "string", "description": "Issue type (Epic, Story, Task, Bug)"},
-                            "max_results": {"type": "integer", "default": 50}
-                        },
-                        "required": ["project_key", "issue_type"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_issues_by_status",
-                    "description": "Get issues filtered by status (To Do, In Progress, Done, etc.)",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "project_key": {"type": "string", "description": "Project key"},
-                            "status": {"type": "string", "description": "Issue status"},
-                            "max_results": {"type": "integer", "default": 50}
-                        },
-                        "required": ["project_key", "status"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "format_issues_for_display",
-                    "description": "Format a list of issues for human-readable display, grouped by type or status",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "issues_data": {"type": "string", "description": "JSON string of issues to format"},
-                            "group_by": {"type": "string", "enum": ["type", "status"], "default": "type"}
-                        },
-                        "required": ["issues_data"]
-                    }
-                }
-            }
-        ]
+            logger.warning("JIRA credentials not configured. JIRA integration will not be available.")
     
-    def _execute_tool(self, tool_name: str, args: Dict) -> Dict:
-        """Execute JIRA operations based on tool name"""
-        
-        if not self.jira_client:
-            return {"error": "JIRA client not initialized"}
-        
-        try:
-            if tool_name == "list_all_projects":
-                projects = self.jira_client.projects()
-                return {
-                    "success": True,
-                    "projects": [
-                        {
-                            "key": p.key,
-                            "name": p.name,
-                            "description": getattr(p, 'description', ''),
-                            "lead": getattr(p, 'lead', {}).get('displayName', 'Unknown') if hasattr(p, 'lead') else 'Unknown'
-                        }
-                        for p in projects
-                    ]
-                }
-            
-            elif tool_name == "get_project_details":
-                project_key = args.get("project_key")
-                project = self.jira_client.project(project_key)
-                return {
-                    "success": True,
-                    "project": {
-                        "key": project.key,
-                        "name": project.name,
-                        "description": getattr(project, 'description', ''),
-                        "lead": getattr(project, 'lead', {}).get('displayName', 'Unknown') if hasattr(project, 'lead') else 'Unknown',
-                        "project_type": getattr(project, 'projectTypeKey', 'Unknown')
-                    }
-                }
-            
-            elif tool_name == "search_issues":
-                jql = args.get("jql")
-                max_results = args.get("max_results", 100)
-                issues = self.jira_client.search_issues(jql, maxResults=max_results)
-                
-                return {
-                    "success": True,
-                    "count": len(issues),
-                    "issues": [
-                        {
-                            "key": issue.key,
-                            "summary": issue.fields.summary,
-                            "description": getattr(issue.fields, 'description', ''),
-                            "type": issue.fields.issuetype.name,
-                            "status": issue.fields.status.name,
-                            "priority": getattr(issue.fields.priority, 'name', 'None') if hasattr(issue.fields, 'priority') and issue.fields.priority else 'None',
-                            "assignee": issue.fields.assignee.displayName if issue.fields.assignee else 'Unassigned',
-                            "created": str(issue.fields.created) if hasattr(issue.fields, 'created') else 'Unknown'
-                        }
-                        for issue in issues
-                    ]
-                }
-            
-            elif tool_name == "get_project_issues_detailed":
-                project_key = args.get("project_key")
-                max_results = args.get("max_results", 100)
-                jql = f'project = {project_key} ORDER BY created DESC'
-                issues = self.jira_client.search_issues(
-                    jql,
-                    maxResults=max_results,
-                    fields='summary,description,issuetype,status,assignee,priority,created,updated,reporter'
-                )
-                
-                return {
-                    "success": True,
-                    "project_key": project_key,
-                    "count": len(issues),
-                    "issues": [
-                        {
-                            "key": issue.key,
-                            "summary": issue.fields.summary,
-                            "description": getattr(issue.fields, 'description', ''),
-                            "type": issue.fields.issuetype.name,
-                            "status": issue.fields.status.name,
-                            "priority": getattr(issue.fields.priority, 'name', 'None') if hasattr(issue.fields, 'priority') and issue.fields.priority else 'None',
-                            "assignee": issue.fields.assignee.displayName if issue.fields.assignee else 'Unassigned',
-                            "reporter": issue.fields.reporter.displayName if hasattr(issue.fields, 'reporter') and issue.fields.reporter else 'Unknown',
-                            "created": str(issue.fields.created) if hasattr(issue.fields, 'created') else 'Unknown',
-                            "updated": str(issue.fields.updated) if hasattr(issue.fields, 'updated') else 'Unknown'
-                        }
-                        for issue in issues
-                    ]
-                }
-            
-            elif tool_name == "analyze_project_patterns":
-                project_key = args.get("project_key")
-                jql = f'project = {project_key}'
-                issues = self.jira_client.search_issues(jql, maxResults=100)
-                
-                # Analyze patterns
-                issue_types = {}
-                statuses = {}
-                priorities = {}
-                
-                for issue in issues:
-                    # Count issue types
-                    issue_type = issue.fields.issuetype.name
-                    issue_types[issue_type] = issue_types.get(issue_type, 0) + 1
-                    
-                    # Count statuses
-                    status = issue.fields.status.name
-                    statuses[status] = statuses.get(status, 0) + 1
-                    
-                    # Count priorities
-                    if hasattr(issue.fields, 'priority') and issue.fields.priority:
-                        priority = issue.fields.priority.name
-                        priorities[priority] = priorities.get(priority, 0) + 1
-                
-                return {
-                    "success": True,
-                    "project_key": project_key,
-                    "total_issues": len(issues),
-                    "issue_type_distribution": dict(sorted(issue_types.items(), key=lambda x: x[1], reverse=True)),
-                    "status_distribution": dict(sorted(statuses.items(), key=lambda x: x[1], reverse=True)),
-                    "priority_distribution": dict(sorted(priorities.items(), key=lambda x: x[1], reverse=True)),
-                    "most_common_type": max(issue_types.items(), key=lambda x: x[1])[0] if issue_types else "None",
-                    "primary_workflow_stage": max(statuses.items(), key=lambda x: x[1])[0] if statuses else "None"
-                }
-            
-            elif tool_name == "get_issues_by_type":
-                project_key = args.get("project_key")
-                issue_type = args.get("issue_type")
-                max_results = args.get("max_results", 50)
-                jql = f'project = {project_key} AND issuetype = "{issue_type}" ORDER BY created DESC'
-                issues = self.jira_client.search_issues(jql, maxResults=max_results)
-                
-                return {
-                    "success": True,
-                    "project_key": project_key,
-                    "issue_type": issue_type,
-                    "count": len(issues),
-                    "issues": [
-                        {
-                            "key": issue.key,
-                            "summary": issue.fields.summary,
-                            "description": getattr(issue.fields, 'description', ''),
-                            "status": issue.fields.status.name
-                        }
-                        for issue in issues
-                    ]
-                }
-            
-            elif tool_name == "get_issues_by_status":
-                project_key = args.get("project_key")
-                status = args.get("status")
-                max_results = args.get("max_results", 50)
-                jql = f'project = {project_key} AND status = "{status}" ORDER BY created DESC'
-                issues = self.jira_client.search_issues(jql, maxResults=max_results)
-                
-                return {
-                    "success": True,
-                    "project_key": project_key,
-                    "status": status,
-                    "count": len(issues),
-                    "issues": [
-                        {
-                            "key": issue.key,
-                            "summary": issue.fields.summary,
-                            "type": issue.fields.issuetype.name
-                        }
-                        for issue in issues
-                    ]
-                }
-            
-            elif tool_name == "format_issues_for_display":
-                issues_data = json.loads(args.get("issues_data"))
-                group_by = args.get("group_by", "type")
-                
-                if not issues_data:
-                    return {"formatted": "No issues to display"}
-                
-                formatted_output = f"Found {len(issues_data)} issues:\n"
-                formatted_output += "="*80 + "\n"
-                
-                if group_by == "type":
-                    # Group by type
-                    grouped = {}
-                    for issue in issues_data:
-                        issue_type = issue.get('type', 'Unknown')
-                        if issue_type not in grouped:
-                            grouped[issue_type] = []
-                        grouped[issue_type].append(issue)
-                    
-                    for issue_type, type_issues in grouped.items():
-                        formatted_output += f"\n{issue_type.upper()} ({len(type_issues)}):\n"
-                        formatted_output += "-" * 40 + "\n"
-                        
-                        for i, issue in enumerate(type_issues, 1):
-                            formatted_output += f"{i}. [{issue.get('key')}] {issue.get('summary')}\n"
-                            formatted_output += f"   Status: {issue.get('status')}\n"
-                            
-                            if issue.get('description'):
-                                desc = issue['description'][:150] + "..." if len(issue['description']) > 150 else issue['description']
-                                formatted_output += f"   Description: {desc}\n"
-                            formatted_output += "\n"
-                else:
-                    # Group by status
-                    grouped = {}
-                    for issue in issues_data:
-                        status = issue.get('status', 'Unknown')
-                        if status not in grouped:
-                            grouped[status] = []
-                        grouped[status].append(issue)
-                    
-                    for status, status_issues in grouped.items():
-                        formatted_output += f"\n{status.upper()} ({len(status_issues)}):\n"
-                        formatted_output += "-" * 40 + "\n"
-                        
-                        for i, issue in enumerate(status_issues, 1):
-                            formatted_output += f"{i}. [{issue.get('key')}] {issue.get('summary')}\n"
-                            formatted_output += f"   Type: {issue.get('type')}\n\n"
-                
-                return {"formatted": formatted_output}
-            
-            return {"error": f"Unknown tool: {tool_name}"}
-            
-        except Exception as e:
-            logger.error(f"Error executing tool {tool_name}: {e}")
-            return {"error": str(e)}
-    
-    def query(self, user_request: str, max_iterations: int = 5) -> Dict:
-        """Let the agent autonomously handle the JIRA query with multi-step reasoning"""
-        
-        messages = [
-            {
-                "role": "system",
-                "content": """You are an expert JIRA assistant with autonomous decision-making capabilities.
-
-Your goals:
-1. Understand the user's request completely
-2. Autonomously decide which tools to use and in what order
-3. Chain multiple tool calls to gather comprehensive information
-4. Analyze and synthesize the data
-5. Provide clear, actionable insights
-
-When analyzing projects:
-- First get project details, then drill into issues
-- Look for patterns in issue types, statuses, and priorities
-- Identify bottlenecks and workflow stages
-- Consider the context for requirement decomposition
-
-Always think step-by-step and explain your reasoning."""
-            },
-            {"role": "user", "content": user_request}
-        ]
-        
-        iteration_count = 0
-        tool_call_history = []
-        
-        # Let agent make multiple iterations of tool calls
-        for iteration in range(max_iterations):
-            iteration_count += 1
-            logger.info(f"Agent iteration {iteration_count}")
-            
-            response = self.openai_client.chat.completions.create(
-                model="gpt-4o",
-                messages=messages,
-                tools=self.tools,
-                temperature=0.2
-            )
-            
-            message = response.choices[0].message
-            
-            # If no tool calls, agent is done
-            if not message.tool_calls:
-                final_response = message.content
-                logger.info(f"Agent completed after {iteration_count} iterations with {len(tool_call_history)} tool calls")
-                return {
-                    "success": True,
-                    "response": final_response,
-                    "iterations": iteration_count,
-                    "tool_calls_made": tool_call_history
-                }
-            
-            # Execute tool calls
-            messages.append(message)
-            
-            for tool_call in message.tool_calls:
-                tool_name = tool_call.function.name
-                tool_args = json.loads(tool_call.function.arguments)
-                
-                logger.info(f"Agent calling tool: {tool_name} with args: {tool_args}")
-                tool_call_history.append({"tool": tool_name, "args": tool_args})
-                
-                result = self._execute_tool(tool_name, tool_args)
-                
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": json.dumps(result)
-                })
-        
-        # Max iterations reached
-        logger.warning(f"Agent reached max iterations ({max_iterations})")
-        return {
-            "success": False,
-            "response": "Query processing reached maximum iterations",
-            "iterations": iteration_count,
-            "tool_calls_made": tool_call_history
-        }
-    
-    # High-level methods for workflow integration
     def get_projects(self) -> List[JIRAProject]:
-        """Agent autonomously retrieves all projects"""
-        result = self.query("List all JIRA projects with their keys, names, and descriptions")
-        
-        if not result.get("success"):
+        if not self.headers:
             return []
         
-        # Also get raw data for backward compatibility
-        if self.jira_client:
-            projects = self.jira_client.projects()
-            return [JIRAProject(p.key, p.name, getattr(p, 'description', '')) for p in projects]
-        
+        try:
+            response = requests.get(f"{self.server}/rest/api/2/project", headers=self.headers, timeout=10)
+            if response.status_code == 200:
+                projects = [JIRAProject(p['key'], p['name'], p.get('description', '')) 
+                           for p in response.json()]
+                logger.info(f"Retrieved {len(projects)} JIRA projects")
+                return projects
+            else:
+                logger.error(f"Failed to get projects. Status: {response.status_code}")
+        except Exception as e:
+            logger.error(f"Error getting projects: {e}")
         return []
     
     def get_issues_enhanced(self, project_key: str) -> List[JIRAIssue]:
-        """Agent autonomously retrieves and analyzes project issues"""
-        result = self.query(
-            f"Get all issues from project {project_key} with comprehensive details including "
-            f"summaries, descriptions, types, statuses, priorities, and assignees. "
-            f"Analyze the project patterns and provide insights."
-        )
+        """Enhanced method to get issues using jira-python library with better task retrieval"""
+        if not self.jira_client:
+            return self.get_issues(project_key)  # Fallback to original method
         
-        # Get raw data for backward compatibility
-        if self.jira_client:
-            jql = f'project = {project_key} ORDER BY created DESC'
+        try:
+            # Use JQL to get all issues from the project with more details
+            jql_query = f'project = {project_key} ORDER BY created DESC'
             issues = self.jira_client.search_issues(
-                jql,
+                jql_query,
                 maxResults=100,
                 fields='summary,description,issuetype,status,assignee,priority,created,updated,reporter'
             )
             
             jira_issues = []
             for issue in issues:
+                # Extract description safely
                 description = ""
                 if hasattr(issue.fields, 'description') and issue.fields.description:
                     description = issue.fields.description
@@ -602,28 +187,103 @@ Always think step-by-step and explain your reasoning."""
                 )
                 jira_issues.append(jira_issue)
             
-            logger.info(f"Retrieved {len(jira_issues)} issues from project {project_key}")
+            logger.info(f"Retrieved {len(jira_issues)} issues from project {project_key} using enhanced method")
             return jira_issues
+            
+        except Exception as e:
+            logger.error(f"Error getting issues with enhanced method: {e}")
+            return self.get_issues(project_key)  # Fallback to original method
+    
+    def get_issues(self, project_key: str) -> List[JIRAIssue]:
+        """Original method as fallback"""
+        if not self.headers:
+            return []
         
+        try:
+            jql = f'project = {project_key} ORDER BY created DESC'
+            params = {'jql': jql, 'maxResults': 100, 'fields': 'summary,description,issuetype,status'}
+            
+            response = requests.get(f"{self.server}/rest/api/2/search", headers=self.headers, params=params, timeout=10)
+            if response.status_code == 200:
+                issues = []
+                for issue_data in response.json().get('issues', []):
+                    fields = issue_data['fields']
+                    issue = JIRAIssue(
+                        key=issue_data['key'],
+                        summary=fields.get('summary', ''),
+                        description=fields.get('description', '') or '',
+                        issue_type=fields['issuetype']['name'],
+                        status=fields['status']['name'],
+                        project_key=project_key
+                    )
+                    issues.append(issue)
+                
+                logger.info(f"Retrieved {len(issues)} issues from project {project_key}")
+                return issues
+            else:
+                logger.error(f"Failed to get issues. Status: {response.status_code}")
+        except Exception as e:
+            logger.error(f"Error getting issues: {e}")
         return []
     
     def get_all_tasks_for_project(self, project_key: str) -> str:
-        """Agent autonomously retrieves, formats, and presents all project tasks"""
-        result = self.query(
-            f"""For project {project_key}, perform a comprehensive analysis:
-            1. Get all issues with full details
-            2. Analyze project patterns (issue types, statuses, priorities)
-            3. Format the information in a clear, structured way grouped by issue type
-            4. Include key metrics and insights
-            5. Highlight any bottlenecks or workflow issues
+        """Get comprehensive task list using OpenAI-powered JIRA interaction"""
+        if not self.jira_client:
+            logger.warning("Enhanced JIRA client not available, using basic method")
+            issues = self.get_issues(project_key)
+            return self.format_issues_display(issues)
+        
+        # Initialize OpenAI client
+        client = OpenAI()
+        
+        def jira_interaction(state: JiraState) -> JiraState:
+            state["jira_task"] = state["jira_task"]
+            completion = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{
+                    "role": "user",
+                    "content": state["jira_task"],
+                }],
+            )
+            state["jira_task_output"] = completion.choices[0].message.content
+            return state
+        
+        try:
+            # Create graph for JIRA interaction
+            graph_builder = StateGraph(JiraState)
+            graph_builder.add_node("jira_interaction", jira_interaction)
+            graph_builder.add_edge(START, "jira_interaction")
+            graph_builder.add_edge("jira_interaction", END)
+            graph = graph_builder.compile()
             
-            Provide a human-readable summary suitable for requirement analysis."""
-        )
-        
-        if result.get("success"):
-            return result.get("response", "No tasks found")
-        
-        # Fallback
+            # Execute the graph to get JIRA tasks
+            task_query = f"for project {project_key} get the list of all available issues with their titles, types, statuses, and descriptions. Format the output in a structured way showing: Issue Key, Title, Type, Status, Description (first 100 chars)"
+            
+            result = graph.invoke({"jira_task": task_query})
+            python_code = strip_code_fences(result["jira_task_output"])
+            
+            # Execute the generated code with JIRA context
+            context = {"jira_instance": self.jira_client, "final_response": "No tasks found"}
+            try:
+                exec(python_code, {}, context)
+                tasks_response = context.get("final_response", "No tasks found")
+                
+                if tasks_response and tasks_response != "No tasks found":
+                    return tasks_response
+                else:
+                    # Fallback to direct method
+                    return self.get_tasks_direct(project_key)
+                    
+            except Exception as exec_error:
+                logger.error(f"Error executing generated code: {exec_error}")
+                return self.get_tasks_direct(project_key)
+                
+        except Exception as e:
+            logger.error(f"Error in OpenAI-powered task retrieval: {e}")
+            return self.get_tasks_direct(project_key)
+    
+    def get_tasks_direct(self, project_key: str) -> str:
+        """Direct method to get and format tasks"""
         issues = self.get_issues_enhanced(project_key)
         return self.format_issues_display(issues)
     
@@ -660,57 +320,46 @@ Always think step-by-step and explain your reasoning."""
         return formatted_output
     
     def generate_context_guidance(self, issues: List[JIRAIssue], hlr: str) -> str:
-        """Agent autonomously generates contextual guidance for requirement analysis"""
+        """Generate guidance prompt based on JIRA issues and HLR to improve requirement analysis"""
         
         if not issues:
             return ""
         
-        # Prepare issue summary
-        issue_summary = {
-            "total_issues": len(issues),
-            "issue_types": {},
-            "statuses": {}
-        }
+        # Analyze issue patterns
+        issue_types = {}
+        statuses = {}
+        common_themes = []
         
         for issue in issues:
-            issue_summary["issue_types"][issue.issue_type] = issue_summary["issue_types"].get(issue.issue_type, 0) + 1
-            issue_summary["statuses"][issue.status] = issue_summary["statuses"].get(issue.status, 0) + 1
+            # Count issue types
+            issue_types[issue.issue_type] = issue_types.get(issue.issue_type, 0) + 1
+            # Count statuses
+            statuses[issue.status] = statuses.get(issue.status, 0) + 1
+            # Extract themes from summaries
+            if issue.summary:
+                common_themes.append(issue.summary.lower())
         
-        # Let agent analyze and generate guidance
-        result = self.query(
-            f"""Analyze this JIRA project context and provide guidance for decomposing a new requirement:
-
-Project Context:
-- Total Issues: {issue_summary['total_issues']}
-- Issue Type Distribution: {issue_summary['issue_types']}
-- Status Distribution: {issue_summary['statuses']}
-
-New Requirement (HLR): "{hlr}"
-
-Provide:
-1. Analysis of existing project patterns
-2. Recommendations for breaking down this HLR
-3. Suggestions for aligning with current project structure
-4. Identification of potential dependencies on existing issues
-5. Capacity and workflow considerations
-
-Format as actionable guidance for requirement decomposition."""
-        )
-        
-        if result.get("success"):
-            return result.get("response", "")
-        
-        # Fallback to basic guidance
-        return f"""
+        # Generate contextual guidance
+        guidance = f"""
 JIRA Project Context Analysis:
 - Total Issues: {len(issues)}
-- Issue Types: {issue_summary['issue_types']}
-- Status Distribution: {issue_summary['statuses']}
+- Issue Types Distribution: {dict(sorted(issue_types.items(), key=lambda x: x[1], reverse=True))}
+- Status Distribution: {dict(sorted(statuses.items(), key=lambda x: x[1], reverse=True))}
 
-Recommendations for HLR "{hlr}":
+Project Patterns Identified:
+- Most common issue type: {max(issue_types.items(), key=lambda x: x[1])[0] if issue_types else 'N/A'}
+- Primary workflow stage: {max(statuses.items(), key=lambda x: x[1])[0] if statuses else 'N/A'}
+
+Contextual Recommendations for HLR "{hlr}":
 1. Consider existing issue patterns when breaking down requirements
-2. Align new stories with current project workflow
+2. Align new stories with current project workflow and issue types
 3. Leverage existing project structure and naming conventions
+4. Account for current team capacity based on issue status distribution
+
+Integration Points:
+- Link generated epics/stories to related existing issues where applicable
+- Maintain consistency with project's established patterns
+- Consider dependencies on current in-progress items
 """
         
         return guidance
@@ -811,7 +460,7 @@ Context:
 
 {jira_guidance}
 
-Generate 5-7 specific, actionable questions that will help decompose this HLR into user stories.
+Generate max of 1-3 specific, actionable questions that will help decompose this HLR into user stories.
 
 Requirements:
 1. Questions must be directly relevant to the HLR
@@ -820,6 +469,8 @@ Requirements:
 4. Include both functional and technical aspects
 5. Consider integration points and edge cases
 6. Account for JIRA project context if provided
+
+and one must ask question is how many issues you want me to generate for this hlr 
 
 Response format (JSON only):
 {{
@@ -935,6 +586,62 @@ JSON only - no additional text:
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON response: {e}")
             raise ValueError(f"Failed to parse JSON response: {e}")
+        
+class TaskGenerator:
+    """
+    this class the writes task for the jira agent which communicates with jira 
+    """
+    def __init__(self, openai_client: OpenAI,data: List):
+        self.client = openai_client
+        self.model = "gpt-4"
+        self.temperature = 0.3
+        self.json_data=data
+        logger.info("task generator Agent initialized")
+    
+    def _call_openai(self, prompt: str) -> str:
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "you are an expert task generator"},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=self.temperature,
+                max_tokens=3000
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            logger.error(f"OpenAI API error: {e}")
+            raise
+    
+    def _parse_json_response(self, response: str) -> Dict[str, Any]:
+        try:
+            cleaned_response = re.sub(r'```json\n?|\n?```', '', response.strip())
+            return json.loads(cleaned_response)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON response: {e}")
+            raise ValueError(f"Failed to parse JSON response: {e}")
+        
+    def task_generation(self,):
+        Task_generated=f"your task is to convert the human requirment to jira task which will be then used by the jira interaction bot \
+        your task is to convert the human requirmrnt into step instruction that jira bot has to perform  \
+        humam reqirment :i want to create new story for the project with id ORI and my data are \
+                    {self.json_data}"
+        response = self._call_openai(Task_generated)
+        print("response 1================")
+        print(response)
+
+        task_code_generator=f"you are a very good python developer who uses has very good knowledge in jira-pypi library ypur task is to just write executable python code to interact with jira to achive the task given by the user provided authentication is done and connection is established to jira and instance of jira is created in jira_instance , return only the executable code python format with Format of your ouput always and must have final result in variable 'final_response' which will later be used to access the result of executable code do not add in any explanation and return only the executable code as i am directly feeding your response to exec method\
+        the list of tasks :{response}\
+        "
+        response = self._call_openai(task_code_generator)
+        print("code==================================")
+        print(response)
+         
+
+
+        return response
+
 
 class EpicGeneratorAgent:
     def __init__(self, openai_client: OpenAI):
@@ -1328,6 +1035,7 @@ async def jira_integration_node(state: WorkflowState) -> WorkflowState:
     state["hlr"] = get_hlr_input()
     
     return state
+
 
 async def new_requirement_node(state: WorkflowState) -> WorkflowState:
     state["current_step"] = "new_requirement"
@@ -1740,6 +1448,7 @@ def create_clean_output(state: WorkflowState) -> Dict[str, Any]:
     generated_content = {}
     
     if state.get('epics'):
+        print(state["epics"])
         generated_content["epics"] = []
         for epic in state['epics']:
             clean_epic = {
@@ -1815,7 +1524,8 @@ async def run_workflow():
         "feedback_count": 0,
         "overall_confidence": 0.0,
         "errors": [],
-        "current_step": ""
+        "current_step": "",
+        "json_ouput":{},
     }
     
     try:
@@ -1838,6 +1548,7 @@ async def run_workflow():
         logger.error(f"Workflow error: {e}")
         print(f"Workflow error: {e}")
         raise
+
 
 if __name__ == "__main__":
     asyncio.run(run_workflow())

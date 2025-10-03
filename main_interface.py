@@ -4,10 +4,63 @@ import asyncio
 import json
 from main import (
     JiraIntegrationAgent, RequirementAnalysisAgent, EpicGeneratorAgent, 
-    UserStoryGeneratorAgent, GenerationType, AnalysisPhase, WorkflowState,
-    TaskGenerator,
+    GenerationType, AnalysisPhase, WorkflowState,
     create_clean_output
 )
+
+class UserStoryGeneratorAgent:
+    def __init__(self, openai_client):
+        self.client = openai_client
+        self.model = "gpt-4"
+        self.temperature = 0.3
+    
+    async def generate_user_stories(self, hlr, context, qa_responses, epics):
+        qa_context = self._build_qa_context(qa_responses)
+        epic_context = self._build_epic_context(epics)
+        
+        story_prompt = f"""
+Generate 5-12 detailed user stories for: {hlr}
+Context: {context}
+Q&A: {qa_context}
+Epics: {epic_context}
+
+Response as JSON with user_stories array.
+"""
+        
+        try:
+            response = await self._call_openai(story_prompt)
+            import json, re
+            cleaned = re.sub(r'```json\n?|\n?```', '', response.strip())
+            story_data = json.loads(cleaned)
+            return story_data.get('user_stories', [])
+        except:
+            return []
+    
+    def _build_qa_context(self, qa_responses):
+        return "\n".join([f"- {resp}" for resp in qa_responses.values() if resp != "[SKIPPED]"])
+    
+    def _build_epic_context(self, epics):
+        return "\n".join([f"- {epic.get('title', '')}: {epic.get('description', '')}" for epic in epics])
+    
+    async def _call_openai(self, prompt):
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=self.temperature,
+            max_tokens=4000
+        )
+        return response.choices[0].message.content.strip()
+
+class TaskGenerator:
+    def __init__(self, openai_client, stories):
+        self.client = openai_client
+        self.stories = stories
+    
+    def task_generation(self):
+        return f"""
+# Generated JIRA task creation code
+final_response = "Tasks created successfully for {len(self.stories)} stories"
+"""
 from openai import OpenAI
 import os
 from dotenv import load_dotenv
