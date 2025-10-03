@@ -4,63 +4,8 @@ import asyncio
 import json
 from main import (
     JiraIntegrationAgent, RequirementAnalysisAgent, EpicGeneratorAgent, 
-    GenerationType, AnalysisPhase, WorkflowState,
-    create_clean_output
-)
-
-class UserStoryGeneratorAgent:
-    def __init__(self, openai_client):
-        self.client = openai_client
-        self.model = "gpt-4"
-        self.temperature = 0.3
-    
-    async def generate_user_stories(self, hlr, context, qa_responses, epics):
-        qa_context = self._build_qa_context(qa_responses)
-        epic_context = self._build_epic_context(epics)
-        
-        story_prompt = f"""
-Generate 5-12 detailed user stories for: {hlr}
-Context: {context}
-Q&A: {qa_context}
-Epics: {epic_context}
-
-Response as JSON with user_stories array.
-"""
-        
-        try:
-            response = await self._call_openai(story_prompt)
-            import json, re
-            cleaned = re.sub(r'```json\n?|\n?```', '', response.strip())
-            story_data = json.loads(cleaned)
-            return story_data.get('user_stories', [])
-        except:
-            return []
-    
-    def _build_qa_context(self, qa_responses):
-        return "\n".join([f"- {resp}" for resp in qa_responses.values() if resp != "[SKIPPED]"])
-    
-    def _build_epic_context(self, epics):
-        return "\n".join([f"- {epic.get('title', '')}: {epic.get('description', '')}" for epic in epics])
-    
-    async def _call_openai(self, prompt):
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=self.temperature,
-            max_tokens=4000
-        )
-        return response.choices[0].message.content.strip()
-
-class TaskGenerator:
-    def __init__(self, openai_client, stories):
-        self.client = openai_client
-        self.stories = stories
-    
-    def task_generation(self):
-        return f"""
-# Generated JIRA task creation code
-final_response = "Tasks created successfully for {len(self.stories)} stories"
-"""
+    GenerationType, AnalysisPhase, UserStoryGeneratorAgent,create_clean_output
+)    
 from openai import OpenAI
 import os
 from dotenv import load_dotenv
@@ -131,9 +76,7 @@ if "step" not in st.session_state:
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "bot", "content": "Hello! I'm Orion, your AI-powered JIRA assistant."},
-        {"role": "bot", "content": "I can help you create and update tasks, generate epics and user stories, "
-                                   "answer questions about your projects, and guide you through project management workflows.\n"
-                                   "    Please let me know what you want to do "}
+        {"role": "bot", "content": "I can help you create and update tasks, generate epics and user stories, answer questions about your projects, and guide you through project management workflows. Please let me know what you want to do!"}
     ]
 if "workflow_state" not in st.session_state:
     st.session_state.workflow_state = {
@@ -589,31 +532,31 @@ elif st.session_state.step == "export":
             {"role": "bot", "content": "Welcome back! Ready to start a new workflow?"}
         ]
         st.rerun()
-    if st.button("push to jira"):
-        data=json.loads(json_output)
-        print(data)
-     # Extract only title and description
-        stories = data["generated_content"]["user_stories"]
-        filtered_stories = [
-            {k: story[k] for k in ("title", "description") if k in story}
-            for story in stories
-        ]
+    # if st.button("push to jira"):
+    #     data=json.loads(json_output)
+    #     print(data)
+    #  # Extract only title and description
+    #     # stories = data["generated_content"]["user_stories"]
+    #     # filtered_stories = [
+    #     #     {k: story[k] for k in ("title", "description") if k in story}
+    #     #     for story in stories
+    #     # ]
 
-        print(json.dumps(filtered_stories, indent=2))
-        api_key = os.getenv('OPENAI_API_KEY')
-        if api_key.startswith('"') and api_key.endswith('"'):
-            api_key = api_key[1:-1]
-        openai_client = OpenAI(api_key=api_key)
-        task_generator = TaskGenerator(openai_client,filtered_stories)
-        task_generated =task_generator.task_generation()
-        python_exec_code=(task_generated)
+    #     # print(json.dumps(filtered_stories, indent=2))
+    #     # api_key = os.getenv('OPENAI_API_KEY')
+    #     # if api_key.startswith('"') and api_key.endswith('"'):
+    #     #     api_key = api_key[1:-1]
+    #     # openai_client = OpenAI(api_key=api_key)
+    #     # task_generator = TaskGenerator(openai_client,filtered_stories)
+    #     # task_generated =task_generator.task_generation()
+    #     # python_exec_code=(task_generated)
 
-        # loading and exec of the code 
-        # Define the execution context (allowed variables)
-        context = {"jira_instance": jira}
+    #     # # loading and exec of the code 
+    #     # # Define the execution context (allowed variables)
+    #     # context = {"jira_instance": jira}
 
-        # Execute multiple lines of code safely inside the context
-        exec(python_exec_code, {}, context)
-        final_response=context.get("final_response")
-        print(final_response)
+    #     # Execute multiple lines of code safely inside the context
+    #     exec(python_exec_code, {}, context)
+    #     final_response=context.get("final_response")
+    #     print(final_response)
         
