@@ -27,20 +27,6 @@ st.set_page_config(page_title="JIRA Workflow", page_icon="🔄", layout="centere
 # Custom CSS
 st.markdown("""
     <style>
-    .chat-header {
-        background: #5d23b6;
-        color: #fff;
-        border-radius: 24px 24px 0 0;
-        padding: 1rem 2rem;
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-    }
-    .chat-header .title {
-        font-size: 1.5rem;
-        font-weight: 500;
-        letter-spacing: 1px;
-    }
     .msg-bubble {
         padding: 12px 18px;
         border-radius: 50px;
@@ -51,14 +37,14 @@ st.markdown("""
     .bot {
         background-color: #5d23b6;
         color: white;
-        align-self: flex-start;
-        border-top-left-radius: 0;
+        align-self: flex-end;
+    border-top-right-radius: 40px;
     }
     .user {
         background-color: #f1f0f0;
         color: #333;
         align-self: flex-end;
-        border-top-right-radius: 0;
+        border-top-right-radius: 40px;
     }
     .typing {
         background-color: #5d23b6;
@@ -87,12 +73,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Header
-st.markdown("""
-    <div class="chat-header">
-        <h2 class="title">ORION JIRA Workflow</h2>
-    </div>
-""", unsafe_allow_html=True)
+# # Header
+# st.markdown("""
+#     <div class="chat-header">
+#         <h2 class="title">ORION JIRA Workflow</h2>
+#     </div>
+# """, unsafe_allow_html=True)
 
 # Initialize session state
 if "step" not in st.session_state:

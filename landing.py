@@ -290,20 +290,36 @@ if st.session_state.show_popup:
         background: rgba(0,0,0,0.7);
         z-index: 9999;
         display: flex;
-        justify-content: center;
-        align-items: center;
+        justify-content: flex-end;
+        align-items: flex-end;
     ">
         <div style="
             background: white;
-            border-radius: 10px;
-            width: 50%;
-            height: 80%;
+            border-radius: 50px;
+            width: 40%;
+            height: 90%;
             position: relative;
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            overflow: hidden;
         ">
+            <!-- Header -->
+            <div style="
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                padding: 15px 20px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                border-radius: 50px 50px 0 0;
+            ">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <img src="data:image/jpeg;base64,{logo_base64}" 
+                         style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover;">
+                    <div style="color: white; font-weight: 600; font-size: 18px;">ORION Chat</div>
+                </div>
+            </div>
             <iframe
                 src="http://localhost:8502/?embed=true"
-                height="100%"
+                height="90%"
                 style="width:100%;border:none;"
             ></iframe>
             <!-- Close button inside modal -->
@@ -315,7 +331,7 @@ if st.session_state.show_popup:
                         color:white;
                         font-size:16px;
                         padding:5px 10px;
-                        border-radius:5px;
+                        border-radius:20px;
                         cursor:pointer;
                     ">✕</button>
             </form>
