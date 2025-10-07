@@ -27,17 +27,29 @@ st.set_page_config(page_title="JIRA Workflow", page_icon="🔄", layout="centere
 # Custom CSS
 st.markdown("""
     <style>
+    .main .block-container {
+        padding-top: 0rem;
+        padding-bottom: 0rem;
+        margin-top: 0rem;
+    }
+    .stApp > header {
+        background-color: transparent;
+    }
+    .stApp {
+        margin-top: -50px;
+    }
     .chat-container {
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
+       
+        margin-top: 0rem;
     }
     .msg-bubble {
         padding: 12px 18px;
         border-radius: 50px;
         max-width: 100%;
         word-wrap: break-word;
-        margin: 0.5rem 0;
+        margin: 0.2rem 0;
     }
     .bot {
         background-color: #5d23b6;
@@ -75,6 +87,9 @@ st.markdown("""
         40% { content: '..'; }
         60% { content: '...'; }
         80%, 100% { content: ''; }
+    }
+    .stButton > button {
+        margin-top: -0.5rem;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -149,7 +164,7 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 # Show typing indicator and handle pending response
 if st.session_state.typing:
-    st.markdown('<div class="msg-bubble typing">Orion is typing<span class="typing-dots"></span></div>', unsafe_allow_html=True)
+    st.markdown('<div class="msg-bubble typing">Typing<span class="typing-dots"></span></div>', unsafe_allow_html=True)
     # Process pending response after a brief delay
     if st.session_state.pending_response:
         import time
@@ -170,7 +185,7 @@ if st.session_state.step == "hlr":
     if user_input:
         st.session_state.hlr = user_input
         user_message(user_input)
-        keyword = ["create", "task", "help","issue", "i want to create", "apply", "generate","make"]
+        keyword = ["create", "task", "help","issue", "i want to create", "apply", "generate","make","issue","epic","story","stories","user story"]
         if any([i in user_input.lower() for i in keyword]):
             show_typing_with_response("I can either work with the existing workflow or create a new one for you — which would you prefer?", "start")
         else:
@@ -299,7 +314,7 @@ elif st.session_state.step == "persona_confirm":
     
     if st.button("Use suggested persona", use_container_width=True):
         user_message(f"Using suggested persona: {recommended}")
-        bot_message("Great! Let's proceed with the questions.You can answer or skip any question by typing 'skip'")
+        bot_message("Great! Let's proceed with the questions.You can answer or skip any question")
         st.session_state.step = "qa"
         st.rerun()
 
@@ -321,27 +336,23 @@ elif st.session_state.step == "qa":
     f"<b>Q{idx+1}:</b> {q.question}<br>"
     f"<i>Context:</i> {q.context}<br>"
     f"<i>Priority:</i> {q.priority}/7 | "
-    f"<i>Required:</i> {'Yes' if q.required else 'No'} | "
-    f"<b>Type skip to skip</b>"
+    f"<i>Required:</i> {'Yes' if q.required else 'No'}"
 )
             st.session_state[f"asked_{idx}"] = True
             st.rerun()
         
+        # Add skip button
+        if st.button("Skip Question", key=f"skip_{idx}"):
+            user_message("Skipped question")
+            st.session_state.workflow_state["responses"][q.id] = "[SKIPPED]"
+            st.session_state.question_idx += 1
+            st.rerun()
+        
         if user_input:
-            if user_input.lower() == "skip":
-                user_message("skip")
-                st.session_state.workflow_state["responses"][q.id] = "[SKIPPED]"
-                st.session_state.question_idx += 1
-                # if st.session_state.question_idx < len(questions):
-                #     next_q = questions[st.session_state.question_idx]
-                #     bot_message(f"**Q{st.session_state.question_idx+1}:** {next_q.question} <br> *Context:* {next_q.context}<br><br> *Priority:* {q.priority}/7 | *Required:* {'Yes' if q.required else 'No'} |**Type skip to skip**")
-                st.rerun()
-            elif user_input:
-                user_message(user_input)
-
-                st.session_state.workflow_state["responses"][q.id] = user_input
-                st.session_state.question_idx += 1
-                st.rerun()
+            user_message(user_input)
+            st.session_state.workflow_state["responses"][q.id] = user_input
+            st.session_state.question_idx += 1
+            st.rerun()
 
     else:
         bot_message("All questions completed! Now select what to generate:")

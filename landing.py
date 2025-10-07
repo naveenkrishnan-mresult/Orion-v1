@@ -30,6 +30,7 @@ st.markdown("""
     color: #fff;
     text-align: center;
     padding: 2rem;
+    margin-top: -50px;
 }
 
 /* Animated background particles */
@@ -322,7 +323,7 @@ if st.session_state.show_popup:
         z-index: 9999;
         display: flex;
         justify-content: flex-end;
-        align-items: flex-end;
+        align-items: center;
     ">
         <div style="
             background: white;
@@ -332,6 +333,7 @@ if st.session_state.show_popup:
             position: relative;
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
             overflow: hidden;
+            margin-right: 20px;
         ">
             <!-- Header -->
             <div style="
@@ -350,7 +352,7 @@ if st.session_state.show_popup:
             </div>
             <iframe
                 src="http://localhost:8502/?embed=true"
-                height="90%"
+                height="95%"
                 style="width:100%;border:none;"
             ></iframe>
             <!-- Close button inside modal -->
