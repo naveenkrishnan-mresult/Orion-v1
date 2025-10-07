@@ -181,6 +181,28 @@ st.markdown("""
     }
 }
 
+/* Footer */
+.stMarkdown .footer {
+    background: rgba(0,0,0,0.3);
+    padding: 2rem 1rem;
+    margin-top: 3rem;
+    text-align: center;
+    border-top: 1px solid rgba(255,255,255,0.1);
+}
+
+.stMarkdown .footer-logo {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-bottom: 1rem;
+}
+
+.stMarkdown .footer-text {
+    color: rgba(255,255,255,0.8);
+    font-size: 0.9rem;
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
     .title {
@@ -217,12 +239,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- Main Content ---
-logo_base64 = get_base64_image("bot designs/images.jpg")
+logo_base64 = get_base64_image("bot designs/logo.png")
+logo_base64_1 = get_base64_image("bot designs/images.jpg")
 
 st.markdown(f"""
 
     <div class="logo-container">
-        <img src="data:image/jpeg;base64,{logo_base64}" class="company-logo" alt="ORION Logo">
+        <img src="data:image/jpeg;base64,{logo_base64}" class="company-logo" alt="ORION Logo",caption="ORION">
     </div>
     <div class="title">Your Virtual JIRA Assistant Awaits</div>
 
@@ -234,19 +257,27 @@ st.markdown(f"""
 
     <div class="features">
         <div class="feature-card">
-            <span class="feature-icon">⚡</span>
-            <div class="feature-title">Lightning Fast</div>
-            <div class="feature-text">Generate JIRA tickets and epics in seconds with AI-powered automation</div>
+            <span class="feature-icon">📚</span>
+            <div class="feature-title">AI Epic Creation</div>
+            <div class="feature-text">Intelligent AI agents automatically generate comprehensive epics with detailed requirements and acceptance criteria</div>
         </div>
         <div class="feature-card">
-            <span class="feature-icon">🎯</span>
-            <div class="feature-title">Smart Tracking</div>
-            <div class="feature-text">Intelligent task monitoring and progress tracking with real-time updates</div>
+            <span class="feature-icon">📝</span>
+            <div class="feature-title">Smart User Stories</div>
+            <div class="feature-text">AI-powered user story generation with proper formatting, acceptance criteria, and story point estimation</div>
         </div>
         <div class="feature-card">
-            <span class="feature-icon">🤖</span>
-            <div class="feature-title">AI Assistant</div>
-            <div class="feature-text">24/7 virtual assistant ready to help with all your project management needs</div>
+            <span class="feature-icon">🎫</span>
+            <div class="feature-title">Automated Issue Tickets</div>
+            <div class="feature-text">Automated issue ticket creation with intelligent assignment to user groups based on skills and workload</div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <img src="data:image/jpeg;base64,{logo_base64_1}" class="footer-logo" alt="ORION Logo">
+        <div class="footer-text">
+            © 2024 ORION. All rights reserved.
+        </div>
     </div>
 
 """, unsafe_allow_html=True)

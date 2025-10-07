@@ -27,6 +27,11 @@ st.set_page_config(page_title="JIRA Workflow", page_icon="🔄", layout="centere
 # Custom CSS
 st.markdown("""
     <style>
+    .chat-container {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
     .msg-bubble {
         padding: 12px 18px;
         border-radius: 50px;
@@ -37,14 +42,15 @@ st.markdown("""
     .bot {
         background-color: #5d23b6;
         color: white;
-        align-self: flex-end;
-    border-top-right-radius: 40px;
+        max-width: 100%;
+        align-self: flex-start;
+        border-top-left-radius: 0;
     }
     .user {
         background-color: #f1f0f0;
         color: #333;
         align-self: flex-end;
-        border-top-right-radius: 40px;
+        border-top-right-radius: 0;
     }
     .typing {
         background-color: #5d23b6;
@@ -135,9 +141,11 @@ def user_message(text):
     st.session_state.messages.append({"role": "user", "content": text})
 
 # Display chat history
+st.markdown('<div class="chat-container">', unsafe_allow_html=True)
 for msg in st.session_state.messages:
     role_class = "user" if msg["role"] == "user" else "bot"
     st.markdown(f'<div class="msg-bubble {role_class}">{msg["content"]}</div>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
 # Show typing indicator and handle pending response
 if st.session_state.typing:
