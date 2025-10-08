@@ -26,8 +26,8 @@ st.markdown("""
 
 .stApp {
     font-family: 'Inter', sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: #fff;
+    background: #F9F9F9;
+    color: #333333;
     text-align: center;
     padding: 2rem;
     margin-top: -50px;
@@ -48,7 +48,7 @@ st.markdown("""
     position: absolute;
     width: 4px;
     height: 4px;
-    background: rgba(255,255,255,0.3);
+    background: rgba(139, 92, 246, 0.6);
     border-radius: 50%;
     animation: float 6s ease-in-out infinite;
 }
@@ -59,6 +59,26 @@ st.markdown("""
 }
 
 
+
+/* Top-left logo style */
+.top-logo {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 1000;
+}
+
+.top-logo img {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    object-fit: cover;
+    transition: all 0.3s ease;
+}
+
+.top-logo img:hover {
+    transform: scale(1.1);
+}
 
 /* Enhanced logo style */
 .logo-container {
@@ -87,9 +107,7 @@ st.markdown("""
     font-size: 3rem;
     font-weight: 600;
     margin-bottom: rem;
-    background: -webkit-linear-gradient(#fff, #ddd);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: #333333;
 }
 
 /* Description */
@@ -97,11 +115,11 @@ st.markdown("""
     font-size: 1.2rem;
     max-width: 900px;
     margin: 0 auto 2rem auto;
-    background: rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.8);
     padding: 1rem;
     border-radius: 12px;
     line-height: 1.6;
-    color: #fff;
+    color: #333333;
 }
 
 /* Features grid */
@@ -114,12 +132,13 @@ st.markdown("""
 
 /* Feature card */
 .stMarkdown .feature-card {
-    background: rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.9);
     padding: 1rem;
     border-radius: 16px;
     box-shadow: 0 6px 18px rgba(0,0,0,0.1);
     transition: all 0.3s ease;
     width: 90%;
+    color: #333333;
 }
 .stMarkdown .feature-card:hover {
     transform: translateY(-6px);
@@ -130,11 +149,13 @@ st.markdown("""
     font-size: 2rem;
     margin-bottom: 0.5rem;
     display: block;
+    color: #8b5cf6;
 }
 .stMarkdown .feature-title {
     font-size: 1.2rem;
     font-weight: 600;
     margin-bottom: 0.5rem;
+    color: #2c5f7e;
 }
 .stMarkdown .feature-text {
     font-size: 1rem;
@@ -150,10 +171,10 @@ st.markdown("""
     height: 80px;
     border-radius: 50%;
     cursor: pointer;
-    box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+    box-shadow: 0 8px 25px rgba(247, 147, 30, 0.4);
     transition: all 0.3s ease;
     z-index: 10000;
-    border: 3px solid rgba(255,255,255,0.3);
+    border: 3px solid rgba(139, 92, 246, 0.3);
     background-size: cover;
     background-position: center;
     animation: pulse 2s infinite;
@@ -161,13 +182,13 @@ st.markdown("""
 
 .chat-fab:hover {
     transform: scale(1.15);
-    box-shadow: 0 15px 35px rgba(102, 126, 234, 0.6);
+    box-shadow: 0 15px 35px rgba(247, 147, 30, 0.6);
 }
 
 @keyframes pulse {
-    0% { box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4), 0 0 0 0 rgba(102, 126, 234, 0.7); }
-    70% { box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4), 0 0 0 10px rgba(102, 126, 234, 0); }
-    100% { box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4), 0 0 0 0 rgba(102, 126, 234, 0); }
+    0% { box-shadow: 0 8px 25px rgba(247, 147, 30, 0.4), 0 0 0 0 rgba(139, 92, 246, 0.7); }
+    70% { box-shadow: 0 8px 25px rgba(247, 147, 30, 0.4), 0 0 0 10px rgba(139, 92, 246, 0); }
+    100% { box-shadow: 0 8px 25px rgba(247, 147, 30, 0.4), 0 0 0 0 rgba(139, 92, 246, 0); }
 }
 
 /* Animations */
@@ -184,11 +205,11 @@ st.markdown("""
 
 /* Footer */
 .stMarkdown .footer {
-    background: rgba(0,0,0,0.3);
+    background: rgba(255,255,255,0.8);
     padding: 2rem 1rem;
     margin-top: 3rem;
     text-align: center;
-    border-top: 1px solid rgba(255,255,255,0.1);
+    border-top: 1px solid rgba(44,95,126,0.2);
 }
 
 .stMarkdown .footer-logo {
@@ -200,7 +221,7 @@ st.markdown("""
 }
 
 .stMarkdown .footer-text {
-    color: rgba(255,255,255,0.8);
+    color: #333333;
     font-size: 0.9rem;
 }
 
@@ -244,17 +265,14 @@ logo_base64 = get_base64_image("bot designs/logo.png")
 logo_base64_1 = get_base64_image("bot designs/images.jpg")
 
 st.markdown(f"""
+    <div class="top-logo">
+        <img src="data:image/jpeg;base64,{logo_base64_1}" alt="ORION Logo">
+    </div>
 
     <div class="logo-container">
         <img src="data:image/jpeg;base64,{logo_base64}" class="company-logo" alt="ORION Logo",caption="ORION">
     </div>
     <div class="title">Your Virtual JIRA Assistant Awaits</div>
-
-    <div class="description">
-        🚀 ORION is an AI-powered JIRA assistant that revolutionizes your project management experience. 
-        Create, update, and track tasks effortlessly while generating epics and user stories automatically. 
-        Get instant guidance and streamline your entire project workflow with intelligent automation.
-    </div>
 
     <div class="features">
         <div class="feature-card">
@@ -275,9 +293,8 @@ st.markdown(f"""
     </div>
 
     <div class="footer">
-        <img src="data:image/jpeg;base64,{logo_base64_1}" class="footer-logo" alt="ORION Logo">
         <div class="footer-text">
-            © 2024 ORION. All rights reserved.
+            © 2025 ORION. All rights reserved.
         </div>
     </div>
 
@@ -298,7 +315,7 @@ st.markdown(f"""
                 width: 70px; height: 70px; border-radius: 50%; border: none;
                 background-image: url(data:image/jpeg;base64,{chat_icon_base64});
                 background-size: cover; background-position: center; cursor: pointer;
-                box-shadow: 0 4px 12px rgba(67, 206, 162,0.4);
+                box-shadow: 0 4px 12px rgba(247, 147, 30, 0.4);
                 transition: transform 0.3s ease;"
                 class="chat-fab">
     </button>
@@ -337,7 +354,7 @@ if st.session_state.show_popup:
         ">
             <!-- Header -->
             <div style="
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                background: #2c5f7e;
                 padding: 15px 20px;
                 display: flex;
                 align-items: center;
@@ -360,7 +377,7 @@ if st.session_state.show_popup:
                 <button type="submit" value="true"
                     style="
                         border:none;
-                        background:#f00;
+                        background:#f7931e;
                         color:white;
                         font-size:16px;
                         padding:5px 10px;
