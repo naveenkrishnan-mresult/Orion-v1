@@ -2,27 +2,26 @@ import streamlit as st
 from io import StringIO
 import asyncio
 import json
-from main import (
-    JiraAgenticIntegration, RequirementAnalysisAgent, EpicGeneratorAgent, 
-    GenerationType, AnalysisPhase, UserStoryGeneratorAgent, ProjectAccessManager
-)    
-from openai import OpenAI
 import os
 from dotenv import load_dotenv
-from jira import JIRA
-JIRA_SERVER =os.getenv("JIRA_SERVER")
-JIRA_EMAIL = os.getenv("JIRA_EMAIL")
-JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN")
-
-# Create Jira connection
-jira = JIRA(
-    server=JIRA_SERVER,
-    basic_auth=(JIRA_EMAIL, JIRA_API_TOKEN)  # email + API token
-)
 
 load_dotenv()
 
 st.set_page_config(page_title="JIRA Workflow", page_icon="🔄", layout="centered")
+
+@st.cache_data
+def get_jira_projects():
+    from main import ProjectAccessManager, JiraAgenticIntegration
+    access_manager = ProjectAccessManager()
+    jira_agent = JiraAgenticIntegration()
+    projects = jira_agent.get_projects_agentic()
+    return [p for p in projects if access_manager.is_project_allowed(p.key)]
+
+@st.cache_data
+def get_jira_issues(project_key):
+    from main import JiraAgenticIntegration
+    jira_agent = JiraAgenticIntegration()
+    return jira_agent.get_issues_agentic(project_key)
 
 # Custom CSS
 st.markdown("""
@@ -41,31 +40,34 @@ st.markdown("""
     .chat-container {
         display: flex;
         flex-direction: column;
-       
         margin-top: 0rem;
+        width: 100%;
     }
     .msg-bubble {
         padding: 12px 18px;
         border-radius: 50px;
-        max-width: 100%;
+        max-width: 70%;
         word-wrap: break-word;
         margin: 0.2rem 0;
     }
     .bot {
-        background-color: #f7931e;
+        background-color: #2c5f7e;
         color: white;
-        max-width: 100%;
         align-self: flex-start;
         border-top-left-radius: 0;
+        margin-right: auto;
+     
     }
     .user {
-        background-color:#E0E0E0;
+        background-color: #E0E0E0;
         color: #333;
         align-self: flex-end;
         border-top-right-radius: 0;
+        margin-left: auto;
+ 
     }
     .typing {
-        background-color: #5d23b6;
+        background-color: #2c5f7e;
         color: white;
         align-self: flex-start;
         border-top-left-radius: 0;
@@ -110,6 +112,7 @@ if "messages" not in st.session_state:
         {"role": "bot", "content": "I can help you create and update tasks, generate epics and user stories, answer questions about your projects, and guide you through project management workflows. Please let me know what you want to do!"}
     ]
 if "workflow_state" not in st.session_state:
+    from main import GenerationType, AnalysisPhase
     st.session_state.workflow_state = {
         "session_id": "",
         "workflow_type": "",
@@ -134,10 +137,17 @@ if "workflow_state" not in st.session_state:
         "current_step": ""
     }
 if "agents" not in st.session_state:
-    st.session_state.agents = {
-        "jira": JiraAgenticIntegration(),
-        "req": RequirementAnalysisAgent()
-    }
+    st.session_state.agents = None
+
+# Lazy load agents when needed
+def get_agents():
+    if st.session_state.agents is None:
+        from main import JiraAgenticIntegration, RequirementAnalysisAgent
+        st.session_state.agents = {
+            "jira": JiraAgenticIntegration(),
+            "req": RequirementAnalysisAgent()
+        }
+    return st.session_state.agents
 if "question_idx" not in st.session_state:
     st.session_state.question_idx = 0
 if "typing" not in st.session_state:
@@ -193,10 +203,7 @@ if st.session_state.step == "hlr":
         st.rerun()
 
 elif st.session_state.step == "jira_projects":
-    access_manager = ProjectAccessManager()
-    projects = st.session_state.agents["jira"].get_projects_agentic()
-    # Filter projects using ProjectAccessManager
-    filtered_projects = [p for p in projects if access_manager.is_project_allowed(p.key)]
+    filtered_projects = get_jira_projects()
     
     if not filtered_projects:
         bot_message("No accessible JIRA projects found.")
@@ -237,7 +244,7 @@ elif st.session_state.step == "jira_issues":
     # Display issues
     project_key = st.session_state.workflow_state["selected_project"]
     with st.spinner("Retrieving project tasks..."):
-        issues = st.session_state.agents["jira"].get_issues_agentic(project_key)
+        issues = get_jira_issues(project_key)
         issues_detail = []
         for ind, issue in enumerate(issues):
             issue_text = (
@@ -282,12 +289,14 @@ elif st.session_state.step == "analyze":
         if st.session_state.workflow_state["workflow_type"] == "existing":
             selected_project = st.session_state.workflow_state.get("selected_project")
             if selected_project:
-                issues = st.session_state.agents["jira"].get_issues_agentic(selected_project)
-                jira_guidance = st.session_state.agents["jira"].generate_context_guidance(
+                agents = get_agents()
+                issues = agents["jira"].get_issues_agentic(selected_project)
+                jira_guidance = agents["jira"].generate_context_guidance(
                     issues, st.session_state.workflow_state["hlr"]
                 )
         
-        analysis = await st.session_state.agents["req"].analyze_requirement(
+        agents = get_agents()
+        analysis = await agents["req"].analyze_requirement(
             st.session_state.workflow_state["hlr"], jira_guidance
         )
         st.session_state.workflow_state["requirement_analysis"] = analysis
@@ -296,7 +305,7 @@ elif st.session_state.step == "analyze":
         recommended_persona = analysis.get("recommended_persona", "Business Analyst")
         st.session_state.workflow_state["persona"] = recommended_persona
         
-        questions = await st.session_state.agents["req"].generate_questions(
+        questions = await agents["req"].generate_questions(
             st.session_state.workflow_state["hlr"],
             st.session_state.workflow_state["slicing_type"],
             recommended_persona,
@@ -369,6 +378,7 @@ elif st.session_state.step == "qa":
         st.rerun()
 
 elif st.session_state.step == "generation_type":
+    from main import GenerationType
     st.markdown("**Select generation type:**")
     gen_type = st.radio(
         "Options:",
@@ -391,6 +401,9 @@ elif st.session_state.step == "generation_type":
 
 elif st.session_state.step == "generate":
     async def generate_content():
+        from main import EpicGeneratorAgent, UserStoryGeneratorAgent, GenerationType
+        from openai import OpenAI
+        
         # Prepare context
         context = f"Persona: {st.session_state.workflow_state.get('persona', 'Business Analyst')}\n"
         context += f"Slicing Type: {st.session_state.workflow_state.get('slicing_type', 'functional')}\n"

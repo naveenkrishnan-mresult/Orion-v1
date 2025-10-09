@@ -64,16 +64,16 @@ st.markdown("""
 .top-logo {
     position: fixed;
     top: 20px;
-    left: 20px;
+    left: 80px;
     z-index: 1000;
 }
 
 .top-logo img {
-    width: 60px;
+    width: 150px;
     height: 60px;
-    border-radius: 50%;
+    border-radius: 20%;
     object-fit: cover;
-    transition: all 0.3s ease;
+
 }
 
 .top-logo img:hover {
@@ -87,27 +87,29 @@ st.markdown("""
     animation: fadeInUp 1s ease-out;
 }
 
-.company-logo {
+.orion-logo {
     width: 150px;
-    height: 130px;
+    height: 129px;
     border-radius: 50%;
-    box-shadow: 0 20px 40px rgba(0,0,0,0.3), 0 0 0 10px rgba(255,255,255,0.1);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.3);
     transition: all 0.4s ease;
-    object-fit: cover;
-    border: 4px solid rgba(255,255,255,0.2);
+    object-fit: center;
 }
 
-.company-logo:hover {
+.orion-logo:hover {
     transform: scale(1.1) rotate(5deg);
     box-shadow: 0 30px 60px rgba(0,0,0,0.4), 0 0 0 15px rgba(255,255,255,0.2);
 }
 
 /* Title */
 .stMarkdown .title {
-    font-size: 3rem;
+    font-size: 2rem;
     font-weight: 600;
-    margin-bottom: rem;
-    color: #333333;
+    margin-bottom: 1rem;
+    background: #2c5f7e;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
 }
 
 /* Description */
@@ -139,9 +141,11 @@ st.markdown("""
     transition: all 0.3s ease;
     width: 90%;
     color: #333333;
+    border-left: 4px solid #f7931e;
 }
 .stMarkdown .feature-card:hover {
     transform: translateY(-6px);
+    box-shadow: 0 12px 25px rgba(247, 147, 30, 0.2);
 }
 
 /* Feature content */
@@ -155,7 +159,7 @@ st.markdown("""
     font-size: 1.2rem;
     font-weight: 600;
     margin-bottom: 0.5rem;
-    color: #2c5f7e;
+    color: #f7931e;
 }
 .stMarkdown .feature-text {
     font-size: 1rem;
@@ -205,9 +209,9 @@ st.markdown("""
 
 /* Footer */
 .stMarkdown .footer {
-    background: rgba(255,255,255,0.8);
+    background : #E0E0E0;
     padding: 2rem 1rem;
-    margin-top: 3rem;
+    margin-top: 7rem;
     text-align: center;
     border-top: 1px solid rgba(44,95,126,0.2);
 }
@@ -234,7 +238,7 @@ st.markdown("""
         font-size: 1.2rem;
         padding: 2rem;
     }
-    .company-logo {
+    .orion-logo {
         width: 150px;
         height: 150px;
     }
@@ -262,15 +266,15 @@ st.markdown("""
 
 # --- Main Content ---
 logo_base64 = get_base64_image("bot designs/logo.png")
-logo_base64_1 = get_base64_image("bot designs/images.jpg")
+logo_base64_1 = get_base64_image("bot designs/company.png")
 
 st.markdown(f"""
     <div class="top-logo">
-        <img src="data:image/jpeg;base64,{logo_base64_1}" alt="ORION Logo">
+        <img src="data:image/jpeg;base64,{logo_base64_1}" alt="company Logo">
     </div>
 
     <div class="logo-container">
-        <img src="data:image/jpeg;base64,{logo_base64}" class="company-logo" alt="ORION Logo",caption="ORION">
+        <img src="data:image/jpeg;base64,{logo_base64}" class="orion-logo" alt="ORION Logo",caption="ORION">
     </div>
     <div class="title">Your Virtual JIRA Assistant Awaits</div>
 
@@ -305,14 +309,14 @@ if "show_popup" not in st.session_state:
     st.session_state.show_popup = False
 
 # Load chat icon as base64
-chat_icon_base64 = get_base64_image("bot designs/images (1).jpg")
+chat_icon_base64 = get_base64_image("bot designs/img_1.png")
 
 # Only show one chat icon as clickable button
 st.markdown(f"""
 <form method="get">
     <button type="submit" name="chat_clicked" value="true" 
             style="position: fixed; bottom: 20px; right: 20px; z-index: 1000;
-                width: 70px; height: 70px; border-radius: 50%; border: none;
+                width: 80px; height: 70px; border-radius: 50%; border: none;
                 background-image: url(data:image/jpeg;base64,{chat_icon_base64});
                 background-size: cover; background-position: center; cursor: pointer;
                 box-shadow: 0 4px 12px rgba(247, 147, 30, 0.4);
@@ -342,6 +346,19 @@ if st.session_state.show_popup:
         justify-content: flex-end;
         align-items: center;
     ">
+    <!-- Close button outside modal -->
+    <form method="get" style="position:absolute; top:15px; right:320px; z-index: 10001;">
+        <button type="submit" name="close_popup" value="true"
+            style="
+                border:none;
+                background:#2c5f7e;
+                color:white;
+                font-size:25px;
+                padding:5px 15px;
+                border-radius:50%;
+                cursor:pointer;
+            ">✕</button>
+        </form>
         <div style="
             background: white;
             border-radius: 50px;
@@ -372,19 +389,6 @@ if st.session_state.show_popup:
                 height="95%"
                 style="width:100%;border:none;"
             ></iframe>
-            <!-- Close button inside modal -->
-            <form method="get" style="position:absolute; top:10px; right:10px;">
-                <button type="submit" value="true"
-                    style="
-                        border:none;
-                        background:#f7931e;
-                        color:white;
-                        font-size:16px;
-                        padding:5px 10px;
-                        border-radius:20px;
-                        cursor:pointer;
-                    ">✕</button>
-            </form>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -392,6 +396,7 @@ if st.session_state.show_popup:
 # Handle close query param
 if st.query_params.get("close_popup"):
     st.session_state.show_popup = False
-    st.query_params # clear params
+    st.query_params.clear()
+    st.rerun()
 
 
