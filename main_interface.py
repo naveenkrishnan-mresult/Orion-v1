@@ -2,27 +2,26 @@ import streamlit as st
 from io import StringIO
 import asyncio
 import json
+from main import (
+    JiraAgenticIntegration, RequirementAnalysisAgent, EpicGeneratorAgent, 
+    UserStoryGeneratorAgent, GenerationType, AnalysisPhase,
+    create_clean_output
+)
+from openai import OpenAI
 import os
 from dotenv import load_dotenv
+from jira import JIRA
+JIRA_SERVER =os.getenv("JIRA_SERVER")
+JIRA_EMAIL = os.getenv("JIRA_EMAIL")
+JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN")
+
+# Create Jira connection
+jira = JIRA(
+    server=JIRA_SERVER,
+    basic_auth=(JIRA_EMAIL, JIRA_API_TOKEN)  # email + API token
+)
 
 load_dotenv()
-
-st.set_page_config(page_title="JIRA Workflow", page_icon="🔄", layout="centered")
-
-@st.cache_data
-def get_jira_projects():
-    from main import ProjectAccessManager, JiraAgenticIntegration
-    access_manager = ProjectAccessManager()
-    jira_agent = JiraAgenticIntegration()
-    projects = jira_agent.get_projects_agentic()
-    return [p for p in projects if access_manager.is_project_allowed(p.key)]
-
-@st.cache_data
-def get_jira_issues(project_key):
-    from main import JiraAgenticIntegration
-    jira_agent = JiraAgenticIntegration()
-    return jira_agent.get_issues_agentic(project_key)
-
 # Custom CSS
 st.markdown("""
     <style>
@@ -112,7 +111,6 @@ if "messages" not in st.session_state:
         {"role": "bot", "content": "I can help you create and update tasks, generate epics and user stories, answer questions about your projects, and guide you through project management workflows. Please let me know what you want to do!"}
     ]
 if "workflow_state" not in st.session_state:
-    from main import GenerationType, AnalysisPhase
     st.session_state.workflow_state = {
         "session_id": "",
         "workflow_type": "",
@@ -137,23 +135,18 @@ if "workflow_state" not in st.session_state:
         "current_step": ""
     }
 if "agents" not in st.session_state:
-    st.session_state.agents = None
-
-# Lazy load agents when needed
-def get_agents():
-    if st.session_state.agents is None:
-        from main import JiraAgenticIntegration, RequirementAnalysisAgent
-        st.session_state.agents = {
-            "jira": JiraAgenticIntegration(),
-            "req": RequirementAnalysisAgent()
-        }
-    return st.session_state.agents
+    st.session_state.agents = {
+        "jira": JiraAgenticIntegration(),
+        "req": RequirementAnalysisAgent()
+    }
 if "question_idx" not in st.session_state:
     st.session_state.question_idx = 0
 if "typing" not in st.session_state:
     st.session_state.typing = False
 if "pending_response" not in st.session_state:
     st.session_state.pending_response = None
+if "projects" not in st.session_state:
+    st.session_state.projects = []
 
 def show_typing_with_response(response_text, next_step=None):
     st.session_state.typing = True
@@ -177,7 +170,6 @@ if st.session_state.typing:
     st.markdown('<div class="msg-bubble typing">Typing<span class="typing-dots"></span></div>', unsafe_allow_html=True)
     # Process pending response after a brief delay
     if st.session_state.pending_response:
-       # Brief delay for typing effect
         response_data = st.session_state.pending_response
         st.session_state.typing = False
         st.session_state.pending_response = None
@@ -197,21 +189,24 @@ if st.session_state.step == "hlr":
         keyword = ["create", "task", "help","issue", "i want to create", "apply", "generate","make","issue","epic","story","stories","user story"]
         if any([i in user_input.lower() for i in keyword]):
             show_typing_with_response("Let me fetch your JIRA projects...", "jira_projects")
-            st.rerun()
         else:
             show_typing_with_response("I can help with task creation. Please type 'create a task' to proceed.")
         st.rerun()
 
 elif st.session_state.step == "jira_projects":
-    filtered_projects = get_jira_projects()
-    
-    if not filtered_projects:
+    if "projects_loaded" not in st.session_state:
+        projects = st.session_state.agents["jira"].get_projects_agentic()
+        st.session_state.projects_loaded = True
+        st.session_state.projects = projects
+        
+    if not st.session_state.projects:
         bot_message("No accessible JIRA projects found.")
         st.session_state.step = "hlr"
         st.rerun()
     else:
         st.markdown("<b>Select a JIRA project:</b>",unsafe_allow_html=True)
-        project_options = [f"{p.key}: {p.name}" for p in filtered_projects]
+        project_options = [f"{p.key}: {p.name}" for p in st.session_state.projects]
+
         selected = st.selectbox("Projects", project_options, index=None, label_visibility="collapsed")
         
         if selected:
@@ -220,6 +215,7 @@ elif st.session_state.step == "jira_projects":
             user_message(f"Selected project: {selected}")
             bot_message("Choose your workflow:")
             st.session_state.step = "workflow_choice"
+            del st.session_state.projects_loaded
             st.rerun()
 
 
@@ -243,27 +239,30 @@ elif st.session_state.step == "workflow_choice":
 elif st.session_state.step == "jira_issues":
     # Display issues
     project_key = st.session_state.workflow_state["selected_project"]
-    with st.spinner("Retrieving project tasks..."):
-        issues = get_jira_issues(project_key)
-        issues_detail = []
-        for ind, issue in enumerate(issues):
-            issue_text = (
-                f"{ind}. Issue: {issue.key} - {issue.summary} <br> "
-                f"Type: {issue.issue_type} <br> "
-                f"Status: {issue.status} <br> "
-                f"{f'Description: {issue.description} <br>' if issue.description else ''}<br>"
-            )
-            issues_detail.append(issue_text)
-            
-        issues_detail_str = " <br> ".join(issues_detail)
-        st.session_state.workflow_state.update({
-            "issues_detail": issues_detail_str,
-            "selected_issues": [issue.key for issue in issues],
-            "issues_list": issues_detail
-        })
+    
+    if "issues_loaded" not in st.session_state:
+        with st.spinner("Retrieving project tasks..."):
+            issues = st.session_state.agents["jira"].get_issues_agentic(project_key)
+            issues_detail = []
+            for ind, issue in enumerate(issues):
+                issue_text = (
+                    f"{ind}. Issue: {issue.key} - {issue.summary} <br> "
+                    f"Type: {issue.issue_type} <br> "
+                    f"Status: {issue.status} <br> "
+                    f"{f'Description: {issue.description} <br>' if issue.description else ''}<br>"
+                )
+                issues_detail.append(issue_text)
+                
+            issues_detail_str = " <br> ".join(issues_detail)
+            st.session_state.workflow_state.update({
+                "issues_detail": issues_detail_str,
+                "selected_issues": [issue.key for issue in issues],
+                "issues_list": issues_detail
+            })
+            st.session_state.issues_loaded = True
     
     selected_issue = st.selectbox(
-        f"Found {len(issues)} issues in project {project_key}",
+        f"Found {len(st.session_state.workflow_state['issues_list'])} issues in project {project_key}",
         options=st.session_state.workflow_state["issues_list"],
         key="issue_dropdown",
         format_func=lambda x: x.replace('<br>', ' | ').replace('<b>', '').replace('</b>', ''),
@@ -274,6 +273,7 @@ elif st.session_state.step == "jira_issues":
         st.session_state.workflow_state["hlr"] = selected_issue
         user_message(f"Selected issue: {selected_issue.replace('<br>', ' | ').replace('<b>', '').replace('</b>', '')}")
         show_typing_with_response("Analyzing selected issue...", "analyze")
+        del st.session_state.issues_loaded
         st.rerun()
 
 elif st.session_state.step == "hlr_input":
@@ -289,14 +289,12 @@ elif st.session_state.step == "analyze":
         if st.session_state.workflow_state["workflow_type"] == "existing":
             selected_project = st.session_state.workflow_state.get("selected_project")
             if selected_project:
-                agents = get_agents()
-                issues = agents["jira"].get_issues_agentic(selected_project)
-                jira_guidance = agents["jira"].generate_context_guidance(
+                issues = st.session_state.agents["jira"].get_issues_agentic(selected_project)
+                jira_guidance = st.session_state.agents["jira"].generate_context_guidance(
                     issues, st.session_state.workflow_state["hlr"]
                 )
         
-        agents = get_agents()
-        analysis = await agents["req"].analyze_requirement(
+        analysis = await st.session_state.agents["req"].analyze_requirement(
             st.session_state.workflow_state["hlr"], jira_guidance
         )
         st.session_state.workflow_state["requirement_analysis"] = analysis
@@ -305,7 +303,7 @@ elif st.session_state.step == "analyze":
         recommended_persona = analysis.get("recommended_persona", "Business Analyst")
         st.session_state.workflow_state["persona"] = recommended_persona
         
-        questions = await agents["req"].generate_questions(
+        questions = await st.session_state.agents["req"].generate_questions(
             st.session_state.workflow_state["hlr"],
             st.session_state.workflow_state["slicing_type"],
             recommended_persona,
@@ -378,7 +376,6 @@ elif st.session_state.step == "qa":
         st.rerun()
 
 elif st.session_state.step == "generation_type":
-    from main import GenerationType
     st.markdown("**Select generation type:**")
     gen_type = st.radio(
         "Options:",
@@ -400,47 +397,50 @@ elif st.session_state.step == "generation_type":
         st.rerun()
 
 elif st.session_state.step == "generate":
-    async def generate_content():
-        from main import EpicGeneratorAgent, UserStoryGeneratorAgent, GenerationType
-        from openai import OpenAI
-        
-        # Prepare context
-        context = f"Persona: {st.session_state.workflow_state.get('persona', 'Business Analyst')}\n"
-        context += f"Slicing Type: {st.session_state.workflow_state.get('slicing_type', 'functional')}\n"
-        context += f"Domain: {st.session_state.workflow_state.get('requirement_analysis', {}).get('domain', 'general')}\n"
-        
-        if st.session_state.workflow_state.get("issues_detail"):
-            context += f"\nJIRA Issues Context:\n{st.session_state.workflow_state['issues_detail']}"
+    if "generation_done" not in st.session_state:
+        async def generate_content():
+            from main import EpicGeneratorAgent, UserStoryGeneratorAgent, GenerationType
+            from openai import OpenAI
+            
+            # Prepare context
+            context = f"Persona: {st.session_state.workflow_state.get('persona', 'Business Analyst')}\n"
+            context += f"Slicing Type: {st.session_state.workflow_state.get('slicing_type', 'functional')}\n"
+            context += f"Domain: {st.session_state.workflow_state.get('requirement_analysis', {}).get('domain', 'general')}\n"
+            
+            if st.session_state.workflow_state.get("issues_detail"):
+                context += f"\nJIRA Issues Context:\n{st.session_state.workflow_state['issues_detail']}"
 
-        if st.session_state.workflow_state.get("feedback_history"):
-            context += f"Feedback: {st.session_state.workflow_state['feedback_history']}\n"
-            context += f"Previous iterations: {st.session_state.workflow_state['feedback_count']}\n"
-                 # Initialize OpenAI client
-        api_key = os.getenv('OPENAI_API_KEY')
-        if api_key.startswith('"') and api_key.endswith('"'):
-            api_key = api_key[1:-1]
-        openai_client = OpenAI(api_key=api_key)
+            if st.session_state.workflow_state.get("feedback_history"):
+                context += f"Feedback: {st.session_state.workflow_state['feedback_history']}\n"
+                context += f"Previous iterations: {st.session_state.workflow_state['feedback_count']}\n"
+                     # Initialize OpenAI client
+            api_key = os.getenv('OPENAI_API_KEY')
+            if api_key.startswith('"') and api_key.endswith('"'):
+                api_key = api_key[1:-1]
+            openai_client = OpenAI(api_key=api_key)
+            
+            epic_agent = EpicGeneratorAgent(openai_client)
+            story_agent = UserStoryGeneratorAgent(openai_client)
+            
+            # Generate content
+            gen_type = st.session_state.workflow_state["generation_type"]
+            hlr = st.session_state.workflow_state["hlr"]
+            responses = st.session_state.workflow_state["responses"]
+            
+            if gen_type in [GenerationType.EPICS_ONLY, GenerationType.BOTH]:
+                epics = await epic_agent.generate_epics(hlr, context, responses)
+                st.session_state.workflow_state["epics"] = epics
+            
+            if gen_type in [GenerationType.STORIES_ONLY, GenerationType.BOTH]:
+                stories = await story_agent.generate_user_stories(
+                    hlr, context, responses, st.session_state.workflow_state.get("epics", [])
+                )
+                st.session_state.workflow_state["user_stories"] = stories
         
-        epic_agent = EpicGeneratorAgent(openai_client)
-        story_agent = UserStoryGeneratorAgent(openai_client)
+        with st.spinner("Generating content..."):
+            asyncio.run(generate_content())
         
-        # Generate content
-        gen_type = st.session_state.workflow_state["generation_type"]
-        hlr = st.session_state.workflow_state["hlr"]
-        responses = st.session_state.workflow_state["responses"]
-        
-        if gen_type in [GenerationType.EPICS_ONLY, GenerationType.BOTH]:
-            epics = await epic_agent.generate_epics(hlr, context, responses)
-            st.session_state.workflow_state["epics"] = epics
-        
-        if gen_type in [GenerationType.STORIES_ONLY, GenerationType.BOTH]:
-            stories = await story_agent.generate_user_stories(
-                hlr, context, responses, st.session_state.workflow_state.get("epics", [])
-            )
-            st.session_state.workflow_state["user_stories"] = stories
-    
-    with st.spinner("Generating content..."):
-        asyncio.run(generate_content())
+        st.session_state.generation_done = True
     
     # Display results
     epics = st.session_state.workflow_state.get("epics", [])
@@ -506,6 +506,10 @@ elif st.session_state.step == "feedback_input":
         st.session_state.workflow_state["feedback_history"].append(user_input)
         st.session_state.workflow_state["feedback_count"] += 1
         
+        # Clear generation flag to allow regeneration
+        if "generation_done" in st.session_state:
+            del st.session_state.generation_done
+        
         bot_message("Applying your feedback and regenerating...")
         st.session_state.step = "generate"
         st.rerun()
@@ -569,6 +573,32 @@ elif st.session_state.step == "export":
         for key in list(st.session_state.keys()):
             if key not in ['step', 'messages', 'workflow_state', 'agents']:
                 del st.session_state[key]
+        
+        # Reset workflow state
+        st.session_state.workflow_state = {
+            "session_id": "",
+            "workflow_type": "",
+            "hlr": "",
+            "selected_project": None,
+            "selected_issues": [],
+            "issues_detail": "",
+            "persona": "",
+            "slicing_type": "",
+            "generation_type": GenerationType.BOTH,
+            "phase": AnalysisPhase.INPUT,
+            "questions": [],
+            "responses": {},
+            "validation_results": {},
+            "requirement_analysis": {},
+            "epics": [],
+            "user_stories": [],
+            "feedback_history": [],
+            "feedback_count": 0,
+            "overall_confidence": 0.0,
+            "errors": [],
+            "current_step": ""
+        }
+        st.session_state.question_idx = 0
         st.session_state.step = "hlr"
         st.session_state.messages = [
             {"role": "bot", "content": "Welcome back! How can I help you?"}
