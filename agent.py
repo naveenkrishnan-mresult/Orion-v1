@@ -13,18 +13,14 @@ from dotenv import load_dotenv
 from langgraph.graph import StateGraph, START, END
 from jira import JIRA
 
-# Import history manager
-from history import HistoryManager, display_history_menu, get_workflow_start_choice
-
 load_dotenv()
 
-# Configure logging only once
-if not logging.getLogger().handlers:
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[logging.FileHandler('jira_agent.log'), logging.StreamHandler()]
-    )
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[logging.FileHandler('jira_agent.log'), logging.StreamHandler()]
+)
 logger = logging.getLogger(__name__)
 
 class GenerationType(Enum):
@@ -65,7 +61,6 @@ class WorkflowState(TypedDict):
     session_id: str
     workflow_type: str
     hlr: str
-    additional_inputs: str
     selected_project: Optional[str]
     selected_issues: List[str]
     issues_detail: str
@@ -85,7 +80,6 @@ class WorkflowState(TypedDict):
     errors: List[str]
     current_step: str
     has_jira_access: bool
-    is_resumed: bool  # New field to track if session is resumed
 
 @dataclass
 class JIRAProject:
@@ -107,19 +101,10 @@ def strip_code_fences(text: str) -> str:
 
 class ProjectAccessManager:
     """Agentic manager for project access control"""
-    _instance = None
-    
-    def __new__(cls, config_file: str = "project_access.json"):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
     
     def __init__(self, config_file: str = "project_access.json"):
-        if hasattr(self, '_initialized'):
-            return
         self.config_file = config_file
         self.allowed_projects = self._load_config()
-        self._initialized = True
         logger.info(f"Project Access Manager initialized with {len(self.allowed_projects)} allowed projects")
     
     def _load_config(self) -> List[str]:
@@ -183,17 +168,8 @@ class ProjectAccessManager:
 
 class JiraAgenticIntegration:
     """Fully agentic JIRA integration using OpenAI and jira-python"""
-    _instance = None
-    
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
     
     def __init__(self):
-        if hasattr(self, '_initialized'):
-            return
-            
         self.server = os.getenv('JIRA_SERVER', '').rstrip('/')
         email = os.getenv('JIRA_EMAIL', '')
         api_token = os.getenv('JIRA_API_TOKEN', '')
@@ -221,7 +197,6 @@ class JiraAgenticIntegration:
         if api_key.startswith('"') and api_key.endswith('"'):
             api_key = api_key[1:-1]
         self.openai_client = OpenAI(api_key=api_key)
-        self._initialized = True
     
     def _execute_jira_agent_task(self, task: str) -> str:
         """Execute JIRA task using agent-generated code"""
@@ -324,7 +299,7 @@ class JiraAgenticIntegration:
             return []
     
     def get_all_tasks_agentic(self, project_key: str) -> str:
-        """Get only epics from project using agent"""
+        """Get comprehensive task list using agent"""
         if not self.jira_client:
             return "JIRA client not available"
         
@@ -332,18 +307,19 @@ class JiraAgenticIntegration:
             return f"Access denied to project {project_key}"
         
         try:
-            task = f"""For project '{project_key}', retrieve ONLY Epic type issues and format them:
-    - Total epic count
-    - Each epic with: Key, Title, Status, Description (first 150 chars)
-    Return formatted string output showing only Epics."""
+            task = f"""For project '{project_key}', retrieve all issues and format them comprehensively:
+- Issue count by type
+- Each issue with: Key, Title, Type, Status, Description (first 150 chars)
+- Grouped by issue type (Epic, Story, Task, Bug, etc.)
+Return formatted string output."""
             
             result = self._execute_jira_agent_task(task)
             return result
                 
         except Exception as e:
-            logger.error(f"Error in agentic epic retrieval: {e}")
-            return f"Error: {str(e)}"    
-        
+            logger.error(f"Error in agentic task retrieval: {e}")
+            return f"Error: {str(e)}"
+    
     def generate_context_guidance(self, issues: List[JIRAIssue], hlr: str) -> str:
         """Generate agentic guidance based on JIRA context"""
         if not issues:
@@ -371,17 +347,7 @@ Contextual Recommendations for HLR "{hlr}":
         return guidance
 
 class RequirementAnalysisAgent:
-    _instance = None
-    
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-    
     def __init__(self):
-        if hasattr(self, '_initialized'):
-            return
-            
         api_key = os.getenv('OPENAI_API_KEY')
         if not api_key:
             raise ValueError("OPENAI_API_KEY not found")
@@ -414,19 +380,15 @@ class RequirementAnalysisAgent:
             }
         }
         
-        self._initialized = True
         logger.info("Requirement Analysis Agent initialized")
     
-    async def analyze_requirement(self, hlr: str, additional_inputs: str, jira_guidance: str = "") -> Dict[str, Any]:
-        additional_context = f"\nAdditional User Inputs: {additional_inputs}" if additional_inputs else ""
-        
+    async def analyze_requirement(self, hlr: str, jira_guidance: str = "") -> Dict[str, Any]:
         analysis_prompt = f"""
 You are an expert Business Analyst specializing in requirement analysis.
 
 Analyze the following High-Level Requirement:
 
 HLR: "{hlr}"
-{additional_context}
 
 {jira_guidance}
 
@@ -466,15 +428,14 @@ JSON only:
                 "confidence": 0.5
             }
     
-    async def generate_questions(self, hlr: str, additional_inputs: str, slicing_type: str, persona: str, jira_guidance: str = "") -> List[Question]:
+    async def generate_questions(self, hlr: str, slicing_type: str, persona: str, jira_guidance: str = "") -> List[Question]:
         slicing_info = self.slicing_config.get(slicing_type, self.slicing_config["functional"])
-        additional_context = f"\n- Additional User Inputs: {additional_inputs}" if additional_inputs else ""
         
         question_prompt = f"""
 You are an expert {persona} analyzing requirements for JIRA story creation.
 
 Context:
-- HLR: "{hlr}"{additional_context}
+- HLR: "{hlr}"
 - Slicing Approach: {slicing_info['name']}
 - Focus Areas: {slicing_info['focus_areas']}
 
@@ -805,22 +766,20 @@ def get_workflow_choice() -> str:
         if choice in ["1", "2"]:
             return "existing" if choice == "1" else "new"
 
-def display_all_issues_agentic(jira_integration: JiraAgenticIntegration, project_key: str) -> str:
-    """Agentic display of epics only"""
-    print(f"\nRetrieving epics from project {project_key}...")
+def display_all_issues_agentic(jira_agent: JiraAgenticIntegration, project_key: str) -> str:
+    """Agentic display of all issues"""
+    print(f"\nRetrieving tasks from project {project_key}...")
     
-    epics_display = jira_integration.get_all_tasks_agentic(project_key)
-    print(epics_display)
+    tasks_display = jira_agent.get_all_tasks_agentic(project_key)
+    print(tasks_display)
     
-    issues = jira_integration.get_issues_agentic(project_key)
+    issues = jira_agent.get_issues_agentic(project_key)
     
-    # Filter only epics
-    epics_detail = []
+    issues_detail = []
     for issue in issues:
-        if issue.issue_type.lower() == 'epic':
-            epics_detail.append(f"Epic: {issue.key} - {issue.summary}\nStatus: {issue.status}\nDescription: {issue.description}")
+        issues_detail.append(f"Issue: {issue.key} - {issue.summary}\nType: {issue.issue_type}\nStatus: {issue.status}\nDescription: {issue.description}")
     
-    return "\n\n".join(epics_detail) if epics_detail else "No epics found in this project"
+    return "\n\n".join(issues_detail)
 
 def get_persona_with_suggestion(recommended_persona: str) -> str:
     """Get persona with AI suggestion and user confirmation"""
@@ -850,27 +809,6 @@ def get_hlr_input() -> str:
     
     return hlr
 
-def get_additional_inputs() -> str:
-    """Get additional inputs from user before analysis"""
-    print("\n" + "="*60)
-    print("ADDITIONAL INPUTS")
-    print("="*60)
-    print("\nDo you have any additional inputs or context to provide?")
-    print("(e.g., constraints, preferences, specific requirements, technologies, etc.)")
-    print("\nPress Enter to skip, or type your inputs:")
-    print("-" * 60)
-    
-    additional_inputs = input().strip()
-    
-    if additional_inputs:
-        print(f"\nAdditional inputs captured: {len(additional_inputs)} characters")
-        logger.info(f"User provided additional inputs: {additional_inputs[:100]}...")
-    else:
-        print("\nNo additional inputs provided. Proceeding with HLR only.")
-        logger.info("No additional inputs provided by user")
-    
-    return additional_inputs
-
 def get_generation_type() -> GenerationType:
     options = {
         "1": GenerationType.EPICS_ONLY,
@@ -887,23 +825,17 @@ def get_generation_type() -> GenerationType:
         if choice in options:
             return options[choice]
 
-# Agents will be initialized in main function to avoid duplicate initialization
+# Agents will be initialized by the interface layer when needed
 
 # Node functions
 async def start_node(state: WorkflowState) -> WorkflowState:
-    # If resuming, skip initialization
-    if state.get("is_resumed"):
-        logger.info(f"Resuming session {state['session_id']}")
-        return state
-    
     state["session_id"] = f"session_{uuid.uuid4().hex[:8]}"
     state["current_step"] = "start"
     state["phase"] = AnalysisPhase.INPUT
     state["has_jira_access"] = True
-    state["is_resumed"] = False
     
-    # Save checkpoint
-    history_manager.save_checkpoint(state)
+    # Initialize agents for CLI usage
+    jira_agent = JiraAgenticIntegration()
     
     # Select project first
     print("\nAvailable Projects:")
@@ -915,7 +847,6 @@ async def start_node(state: WorkflowState) -> WorkflowState:
         state["errors"].append("No accessible JIRA projects found")
         state["has_jira_access"] = False
         state["workflow_type"] = "new"
-        history_manager.save_checkpoint(state)
         return state
     
     selected_project_key = select_project(projects)
@@ -924,7 +855,6 @@ async def start_node(state: WorkflowState) -> WorkflowState:
         state["errors"].append("No project selected")
         state["has_jira_access"] = False
         state["workflow_type"] = "new"
-        history_manager.save_checkpoint(state)
         return state
     
     state["selected_project"] = selected_project_key
@@ -932,13 +862,13 @@ async def start_node(state: WorkflowState) -> WorkflowState:
     # Now ask workflow choice
     state["workflow_type"] = get_workflow_choice()
     
-    # Save checkpoint after workflow choice
-    history_manager.save_checkpoint(state)
-    
     return state
 
 async def jira_integration_node(state: WorkflowState) -> WorkflowState:
     state["current_step"] = "jira_integration"
+    
+    # Initialize agents for CLI usage
+    jira_agent = JiraAgenticIntegration()
     
     # Display all issues
     issues_detail = display_all_issues_agentic(jira_agent, state["selected_project"])
@@ -947,44 +877,28 @@ async def jira_integration_node(state: WorkflowState) -> WorkflowState:
     issues = jira_agent.get_issues_agentic(state["selected_project"])
     state["selected_issues"] = [issue.key for issue in issues]
     
-    # Get HLR after displaying issues (skip if already provided in resumed session)
-    if not state.get("hlr"):
-        state["hlr"] = get_hlr_input()
-    
-    # Get additional inputs before starting analysis (skip if already provided)
-    if not state.get("additional_inputs"):
-        state["additional_inputs"] = get_additional_inputs()
-    
-    # Save checkpoint
-    history_manager.save_checkpoint(state)
+    # Get HLR after displaying issues
+    state["hlr"] = get_hlr_input()
     
     return state
 
 async def new_requirement_node(state: WorkflowState) -> WorkflowState:
     state["current_step"] = "new_requirement"
-    
-    # Skip input if already provided in resumed session
-    if not state.get("hlr"):
-        state["hlr"] = get_hlr_input()
-    
-    # Get additional inputs before starting analysis (skip if already provided)
-    if not state.get("additional_inputs"):
-        state["additional_inputs"] = get_additional_inputs()
-    
+    state["hlr"] = get_hlr_input()
     state["has_jira_access"] = False
-    
-    # Save checkpoint
-    history_manager.save_checkpoint(state)
-    
     return state
 
-async def analyze_requirements_node(state: WorkflowState) -> WorkflowState:
-    state["current_step"] = "analyze_requirements"
+async def requirement_analysis_node(state: WorkflowState) -> WorkflowState:
+    state["current_step"] = "requirement_analysis"
     state["phase"] = AnalysisPhase.ANALYZING
     
     if not state.get("hlr"):
         state["errors"].append("No HLR provided")
         return state
+    
+    # Initialize agents for CLI usage
+    jira_agent = JiraAgenticIntegration()
+    req_agent = RequirementAnalysisAgent()
     
     # Generate JIRA guidance if working with existing project
     jira_guidance = ""
@@ -994,36 +908,24 @@ async def analyze_requirements_node(state: WorkflowState) -> WorkflowState:
             issues = jira_agent.get_issues_agentic(selected_project)
             jira_guidance = jira_agent.generate_context_guidance(issues, state["hlr"])
     
-    # Analyze requirement with JIRA context and additional inputs (skip if already analyzed)
-    if not state.get("requirement_analysis"):
-        additional_inputs = state.get("additional_inputs", "")
-        analysis = await req_agent.analyze_requirement(state["hlr"], additional_inputs, jira_guidance)
-        state["requirement_analysis"] = analysis
-        state["slicing_type"] = analysis.get("slicing_type", "functional")
-        
-        # Get persona with AI suggestion (skip if already set)
-        if not state.get("persona"):
-            recommended_persona = analysis.get("recommended_persona", "Business Analyst")
-            state["persona"] = get_persona_with_suggestion(recommended_persona)
+    # Analyze requirement with JIRA context
+    analysis = await req_agent.analyze_requirement(state["hlr"], jira_guidance)
+    state["requirement_analysis"] = analysis
+    state["slicing_type"] = analysis.get("slicing_type", "functional")
     
-    # Generate questions with JIRA context and additional inputs (skip if already generated)
+    # Get persona with AI suggestion
+    recommended_persona = analysis.get("recommended_persona", "Business Analyst")
+    state["persona"] = get_persona_with_suggestion(recommended_persona)
+    
+    # Generate questions with JIRA context
     state["phase"] = AnalysisPhase.QUESTIONING
-    if not state.get("questions"):
-        additional_inputs = state.get("additional_inputs", "")
-        questions = await req_agent.generate_questions(state["hlr"], additional_inputs, state["slicing_type"], state["persona"], jira_guidance)
-        state["questions"] = questions
+    questions = await req_agent.generate_questions(state["hlr"], state["slicing_type"], state["persona"], jira_guidance)
+    state["questions"] = questions
     
-    # Save checkpoint before Q&A
-    history_manager.save_checkpoint(state)
+    # Interactive Q&A session
+    qa_responses = {}
     
-    # Interactive Q&A session (skip already answered questions)
-    qa_responses = state.get("responses", {})
-    
-    for question in state["questions"]:
-        # Skip if already answered
-        if question.answered:
-            continue
-            
+    for question in questions:
         print(f"\nQuestion: {question.question}")
         print(f"Context: {question.context}")
         print(f"Priority: {question.priority}/5 | Required: {'Yes' if question.required else 'No'}")
@@ -1067,21 +969,11 @@ async def analyze_requirements_node(state: WorkflowState) -> WorkflowState:
     valid_scores = [vr.overall_score for vr in state["validation_results"].values() if vr.is_valid]
     state["overall_confidence"] = sum(valid_scores) / len(valid_scores) if valid_scores else 0.0
     
-    # Save checkpoint after Q&A
-    history_manager.save_checkpoint(state)
-    
     return state
 
 async def setup_generation_node(state: WorkflowState) -> WorkflowState:
     state["current_step"] = "setup_generation"
-    
-    # Skip if generation type already set
-    if not state.get("generation_type"):
-        state["generation_type"] = get_generation_type()
-    
-    # Save checkpoint
-    history_manager.save_checkpoint(state)
-    
+    state["generation_type"] = get_generation_type()
     return state
 
 async def generation_node(state: WorkflowState) -> WorkflowState:
@@ -1092,10 +984,6 @@ async def generation_node(state: WorkflowState) -> WorkflowState:
     context = f"Persona: {state.get('persona', 'Business Analyst')}\n"
     context += f"Slicing Type: {state.get('slicing_type', 'functional')}\n"
     context += f"Domain: {state.get('requirement_analysis', {}).get('domain', 'general')}\n"
-    
-    # Add additional inputs to context if available
-    if state.get("additional_inputs"):
-        context += f"\nAdditional User Inputs: {state['additional_inputs']}\n"
     
     if state.get("issues_detail"):
         context += f"\nJIRA Issues Context:\n{state['issues_detail']}"
@@ -1109,24 +997,19 @@ async def generation_node(state: WorkflowState) -> WorkflowState:
     epic_agent = EpicGeneratorAgent(openai_client)
     story_agent = UserStoryGeneratorAgent(openai_client)
     
-    # Generate content based on type (skip if already generated)
+    # Generate content based on type
     if state["generation_type"] in [GenerationType.EPICS_ONLY, GenerationType.BOTH]:
-        if not state.get("epics"):
-            epics = await epic_agent.generate_epics(state["hlr"], context, state["responses"])
-            state["epics"] = epics
+        epics = await epic_agent.generate_epics(state["hlr"], context, state["responses"])
+        state["epics"] = epics
     
     if state["generation_type"] in [GenerationType.STORIES_ONLY, GenerationType.BOTH]:
-        if not state.get("user_stories"):
-            stories = await story_agent.generate_user_stories(
-                state["hlr"], 
-                context, 
-                state["responses"], 
-                state.get("epics", [])
-            )
-            state["user_stories"] = stories
-    
-    # Save checkpoint after generation
-    history_manager.save_checkpoint(state)
+        stories = await story_agent.generate_user_stories(
+            state["hlr"], 
+            context, 
+            state["responses"], 
+            state.get("epics", [])
+        )
+        state["user_stories"] = stories
     
     return state
 
@@ -1175,10 +1058,6 @@ async def feedback_node(state: WorkflowState) -> WorkflowState:
             base_context = f"Persona: {state.get('persona', 'Business Analyst')}\n"
             base_context += f"Slicing Type: {state.get('slicing_type', 'functional')}\n"
             
-            # Include additional inputs in regeneration context
-            if state.get("additional_inputs"):
-                base_context += f"\nAdditional User Inputs: {state['additional_inputs']}\n"
-            
             if state.get("issues_detail"):
                 base_context += f"\nJIRA Context:\n{state['issues_detail']}"
             
@@ -1205,9 +1084,6 @@ async def feedback_node(state: WorkflowState) -> WorkflowState:
                 )
                 state["user_stories"] = stories
             
-            # Save checkpoint after feedback iteration
-            history_manager.save_checkpoint(state)
-            
             # Show updated content
             print("\n" + "="*80)
             print("UPDATED CONTENT")
@@ -1225,9 +1101,6 @@ async def feedback_node(state: WorkflowState) -> WorkflowState:
         else:
             break
     
-    # Save final checkpoint
-    history_manager.save_checkpoint(state)
-    
     return state
 
 async def final_validation_node(state: WorkflowState) -> WorkflowState:
@@ -1237,33 +1110,12 @@ async def final_validation_node(state: WorkflowState) -> WorkflowState:
     if not state.get("epics") and not state.get("user_stories"):
         state["errors"].append("No content generated")
     
-    # Mark as completed and save final checkpoint
-    history_manager.save_checkpoint(state)
-    
     return state
 
 # Routing functions
 def should_use_jira(state: WorkflowState) -> str:
     """Conditional edge based on workflow type"""
     return "jira_integration" if state.get("workflow_type") == "existing" else "new_requirement"
-
-def determine_next_step_from_resume(state: WorkflowState) -> str:
-    """Intelligently determine where to route based on resumed state"""
-    current_step = state.get("current_step", "")
-    
-    # Map of steps to their next logical step
-    step_routing = {
-        "start": should_use_jira(state),
-        "jira_integration": "analyze_requirements",
-        "new_requirement": "analyze_requirements",
-        "analyze_requirements": "setup_generation",
-        "setup_generation": "generation",
-        "generation": "feedback",
-        "feedback": "final_validation",
-        "final_validation": "END"
-    }
-    
-    return step_routing.get(current_step, "analyze_requirements")
 
 # Create workflow
 workflow = StateGraph(WorkflowState)
@@ -1272,7 +1124,7 @@ workflow = StateGraph(WorkflowState)
 workflow.add_node("start", start_node)
 workflow.add_node("jira_integration", jira_integration_node)
 workflow.add_node("new_requirement", new_requirement_node)
-workflow.add_node("analyze_requirements", analyze_requirements_node)
+workflow.add_node("requirement_analysis", requirement_analysis_node)
 workflow.add_node("setup_generation", setup_generation_node)
 workflow.add_node("generation", generation_node)
 workflow.add_node("feedback", feedback_node)
@@ -1281,9 +1133,9 @@ workflow.add_node("final_validation", final_validation_node)
 # Add edges with conditional routing
 workflow.set_entry_point("start")
 workflow.add_conditional_edges("start", should_use_jira)
-workflow.add_edge("jira_integration", "analyze_requirements")
-workflow.add_edge("new_requirement", "analyze_requirements")
-workflow.add_edge("analyze_requirements", "setup_generation")
+workflow.add_edge("jira_integration", "requirement_analysis")
+workflow.add_edge("new_requirement", "requirement_analysis")
+workflow.add_edge("requirement_analysis", "setup_generation")
 workflow.add_edge("setup_generation", "generation")
 workflow.add_edge("generation", "feedback")
 workflow.add_edge("feedback", "final_validation")
@@ -1315,11 +1167,6 @@ Feedback Iterations: {state.get('feedback_count', 0)}
     print(f"\nHigh Level Requirement:")
     print("-" * 30)
     print(state.get('hlr', 'Not provided'))
-    
-    if state.get('additional_inputs'):
-        print(f"\nAdditional Inputs:")
-        print("-" * 30)
-        print(state.get('additional_inputs'))
     
     if state.get('epics'):
         print(f"\nGenerated Epics ({len(state['epics'])}):")
@@ -1359,7 +1206,6 @@ def create_clean_output(state: WorkflowState) -> Dict[str, Any]:
         },
         "requirement": {
             "hlr": state.get('hlr', ''),
-            "additional_inputs": state.get('additional_inputs', ''),
             "analysis": {
                 "domain": state.get('requirement_analysis', {}).get('domain', ''),
                 "complexity": state.get('requirement_analysis', {}).get('complexity', ''),
@@ -1445,83 +1291,10 @@ def create_clean_output(state: WorkflowState) -> Dict[str, Any]:
     return output
 
 async def run_workflow():
-    # Initialize agents here to avoid duplicate initialization
-    global jira_agent, req_agent, history_manager
-    
-    # Initialize singletons (will only create once due to singleton pattern)
-    jira_agent = JiraAgenticIntegration()
-    req_agent = RequirementAnalysisAgent()
-    history_manager = HistoryManager()
-    
-    # Show main menu: New workflow or History
-    start_choice = get_workflow_start_choice()
-    
-    if start_choice == 'history':
-        # Display history and get selected session
-        resumed_state = display_history_menu(history_manager)
-        
-        if resumed_state:
-            # Mark as resumed
-            resumed_state["is_resumed"] = True
-            
-            print("\n Resuming workflow from saved state...")
-            print(f"Continuing from step: {resumed_state.get('current_step', 'unknown')}")
-            
-            # Determine where to continue from
-            current_step = resumed_state.get('current_step', '')
-            
-            # Create a new workflow execution starting from the appropriate node
-            try:
-                # If completed, just show results
-                if current_step == 'final_validation':
-                    display_results(resumed_state)
-                    
-                    view_results = input("\nView detailed results? (y/n): ").strip().lower()
-                    if view_results == 'y':
-                        clean_output = create_clean_output(resumed_state)
-                        print("\n" + json.dumps(clean_output, indent=2))
-                    
-                    regenerate = input("\nRegenerate content with modifications? (y/n): ").strip().lower()
-                    if regenerate == 'y':
-                        # Go back to generation phase
-                        resumed_state["current_step"] = "generation"
-                        resumed_state["is_resumed"] = False
-                        resumed_state["epics"] = []
-                        resumed_state["user_stories"] = []
-                        
-                        final_state = await app.ainvoke(resumed_state)
-                        display_results(final_state)
-                    else:
-                        return resumed_state
-                else:
-                    # Continue workflow from current state
-                    final_state = await app.ainvoke(resumed_state)
-                    display_results(final_state)
-                    
-                    save_option = input("\nSave results to file? (y/n): ").strip().lower()
-                    if save_option == 'y':
-                        clean_output = create_clean_output(final_state)
-                        filename = f"jira_results_{final_state['session_id']}.json"
-                        with open(filename, 'w', encoding='utf-8') as f:
-                            json.dump(clean_output, f, indent=2, ensure_ascii=False)
-                        print(f"✓ Results saved to {filename}")
-                    
-                    return final_state
-                    
-            except Exception as e:
-                logger.error(f"Error resuming workflow: {e}")
-                print(f"❌ Error resuming workflow: {e}")
-                raise
-        else:
-            # User chose to start new workflow from history menu
-            print("\n Starting new workflow...")
-    
-    # Start new workflow
     initial_state = {
         "session_id": "",
         "workflow_type": "",
         "hlr": "",
-        "additional_inputs": "",
         "selected_project": None,
         "selected_issues": [],
         "issues_detail": "",
@@ -1540,8 +1313,7 @@ async def run_workflow():
         "overall_confidence": 0.0,
         "errors": [],
         "current_step": "",
-        "has_jira_access": False,
-        "is_resumed": False
+        "has_jira_access": False
     }
     
     try:
@@ -1555,13 +1327,13 @@ async def run_workflow():
             filename = f"jira_results_{final_state['session_id']}.json"
             with open(filename, 'w', encoding='utf-8') as f:
                 json.dump(clean_output, f, indent=2, ensure_ascii=False)
-            print(f"✓ Results saved to {filename}")
+            print(f"Results saved to {filename}")
         
         return final_state
         
     except Exception as e:
         logger.error(f"Workflow error: {e}")
-        print(f"❌ Workflow error: {e}")
+        print(f"Workflow error: {e}")
         raise
 
 if __name__ == "__main__":

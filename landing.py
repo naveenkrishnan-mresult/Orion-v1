@@ -26,11 +26,24 @@ st.markdown("""
 
 .stApp {
     font-family: 'Inter', sans-serif;
-    background: #F9F9F9;
+    background: #BA7557;
     color: #333333;
     text-align: center;
-    padding: 2rem;
-    margin-top: -50px;
+    padding: 0 !important;
+    margin: -4% !important;
+}
+
+.main .block-container {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    overflow-x: hidden;
 }
 
 /* Animated background particles */
