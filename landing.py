@@ -26,7 +26,7 @@ st.markdown("""
 
 .stApp {
     font-family: 'Inter', sans-serif;
-    background: #BA7557;
+    background: linear-gradient(135deg, #f7931e 0%, #2c5f7e 50%, #6b7280 100%);
     color: #333333;
     text-align: center;
     padding: 0 !important;
@@ -119,7 +119,7 @@ html, body {
     font-size: 2rem;
     font-weight: 600;
     margin-bottom: 1rem;
-    background: #2c5f7e;
+    background: White;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
