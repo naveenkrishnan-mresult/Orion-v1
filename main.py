@@ -362,8 +362,17 @@ JIRA Project Context Analysis:
 - Issue Types: {dict(sorted(issue_types.items(), key=lambda x: x[1], reverse=True))}
 - Status Distribution: {dict(sorted(statuses.items(), key=lambda x: x[1], reverse=True))}
 
+Interpretation Guidelines:
+- Use issue types to understand the mix of work (Epics, Stories).
+- Use status distribution to gauge workflow progress, backlog size, and team throughput.
+- Treat Epics as strategic areas and Stories as functional requirements.
+
+Objective:
+- Derive actionable context to guide design of the following High-Level Requirement (HLR).
+- Ensure the HLR aligns with current project scope, avoids redundancy, and fits capacity limits.
+
 Contextual Recommendations for HLR "{hlr}":
-1. Consider existing issue patterns
+1. Consider existing issue patterns and functional areas.
 2. Align with current project workflow
 3. Leverage project structure and naming conventions
 4. Account for team capacity based on status distribution
@@ -423,7 +432,7 @@ class RequirementAnalysisAgent:
         analysis_prompt = f"""
 You are an expert Business Analyst specializing in requirement analysis.
 
-Analyze the following High-Level Requirement:
+Analyze the following High-Level Requirement(HLR) and produce the output in STRICTLY valid JSON ONLY:
 
 HLR: "{hlr}"
 {additional_context}
@@ -435,18 +444,31 @@ Available slicing approaches:
 - technical: Break down by technical components and system layers  
 - user_journey: Break down by user personas and interaction journeys
 
-Provide analysis as JSON:
+Instructions:
+- Select 'slicing_type' from: "functional", "technical", "user_journey" ONLY.
+- Select 'complexity' as one of: "Low", "Medium", "High".
+- Provide meaningful entries for all fields; if not inferable, use "N/A".
+- For each field, include a brief reasoning (1-2 sentences max) explaining your choice.
+- Ensure reasoning aligns with Agile/BA best practices (INVEST, value-driven analysis).
+
+OUTPUT FORMAT (Provide analysis as JSON):
 {{
     "slicing_type": "functional|technical|user_journey",
+    "slicing_type_reasoning": "...",
     "recommended_persona": "most suitable persona",
+    "persona_reasoning": "...",
     "domain": "identified business domain",
+    "domain_reasoning": "...",
     "complexity": "Low|Medium|High",
+    "complexity_reasoning": "...",
     "user_types": ["list of user personas"],
+    "user_types_reasoning": "...",
     "main_features": ["key functional areas"],
+    "main_features_reasoning": "...",
     "confidence": 0.0-1.0
 }}
 
-JSON only:
+Reply ONLY with the above structure, filled in, as a JSON object.
 """
         
         try:
@@ -471,7 +493,7 @@ JSON only:
         additional_context = f"\n- Additional User Inputs: {additional_inputs}" if additional_inputs else ""
         
         question_prompt = f"""
-You are an expert {persona} analyzing requirements for JIRA story creation.
+You are an expert {persona} with deep Agile and JIRA requirement analysis experience.
 
 Context:
 - HLR: "{hlr}"{additional_context}
@@ -482,7 +504,18 @@ Context:
 
 Generate 5-7 specific, actionable questions to decompose this HLR.
 
-Response format (JSON only):
+Requirements for each question:
+- "question": Concise question text.
+- "context": Brief explanation why this question is important.
+- "reasoning": How it helps break down the HLR.
+- "priority": Integer (1=highest priority).
+- "required": true if mandatory for clarification, false otherwise.
+
+Ensure questions guide effective story breakdown and prioritization.
+If any aspect of the HLR is ambiguous or missing info, design questions to clarify it.
+
+Response format (JSON ONLY):
+
 {{
     "questions": [
         {{
@@ -491,11 +524,18 @@ Response format (JSON only):
             "reasoning": "User roles impact story structure",
             "priority": 1,
             "required": true
+        }},
+        {{
+            "question": "What are the key technical constraints or platforms involved?",
+            "context": "Technical constraints affect implementation scope",
+            "reasoning": "Helps define technical stories and dependencies",
+            "priority": 2,
+            "required": false
         }}
     ]
 }}
 
-JSON only:
+Reply ONLY with the JSON object, no additional text.
 """
         
         try:
@@ -523,7 +563,8 @@ JSON only:
     
     async def validate_response(self, hlr: str, question: Question, user_response: str) -> ValidationResult:
         validation_prompt = f"""
-Validate the response:
+You are an expert Business Analyst and AI evaluator specializing in validating requirement analysis responses.
+Validate the following user response to a requirement analysis question.
 
 HLR: "{hlr}"
 Question: "{question.question}"
@@ -531,7 +572,14 @@ Response: "{user_response}"
 
 Validate for: relevance, completeness, clarity, actionability
 
-JSON format:
+Provide a detailed JSON evaluation with:
+- "is_valid": true if the response satisfactorily answers the question; false otherwise.
+- "overall_score": float 0.0 to 1.0 estimating overall quality.
+- "issues": list of specific issues found in the response; empty list if none.
+- "suggestions": list of concrete suggestions to improve the response; empty list if none.
+- "confidence": your confidence in the evaluation, 0.0 to 1.0.
+
+Respond ONLY with a JSON object as below:
 {{
     "is_valid": true|false,
     "overall_score": 0.0-1.0,
@@ -539,8 +587,6 @@ JSON format:
     "suggestions": ["improvement suggestions"],
     "confidence": 0.0-1.0
 }}
-
-JSON only:
 """
         
         try:
@@ -603,33 +649,54 @@ class EpicGeneratorAgent:
         qa_context = self._build_qa_context(qa_responses)
         
         epic_prompt = f"""
-You are an expert Epic writer for JIRA.
+## Role 
+You are an expert Agile Epic writer for JIRA with extensive experience in enterprise and scaled Agile frameworks.
 
-Context:
-- HLR: "{hlr}"
+## Context
+- High-Level Requirement (HLR): "{hlr}"
 - Additional Context: {context}
 - Q&A Insights: {qa_context}
 
-Generate 2-4 comprehensive epics.
+## Task
+Generate 2 to 4 comprehensive epics that together cover the HLR.
 
-JSON format:
+Each epic must include:
+- "title": A concise, descriptive name reflecting business value.
+- "description": A clear narrative explaining the epic's purpose and goals.
+- "business_value": The value or benefit to the business or users.
+- "acceptance_criteria": A list of acceptance criteria, each criterion formatted as a single string in GIVEN/WHEN/THEN scenario style.  
+- "priority": "High", "Medium", or "Low" indicating urgency/importance.
+- "estimated_story_points": An integer estimating effort size.
+- "dependencies": Any dependencies on other work items.
+- "assumptions": Key assumptions or constraints.
+- "risks": Known or potential risks related to this epic.
+
+Ensure:
+- The JSON is syntactically valid and parsable.
+- Each Epic is unique and collectively covers the entire HLR scope without overlap.
+- Use Agile best practices terminology such as MVP, Definition of Done, and scope boundaries. 
+- Generated epics adhere to the INVEST criteria: Independent, Negotiable, Valuable, Estimable, Small, and Testable.
+
+Example Output format (JSON only):
 {{
     "epics": [
         {{
             "title": "User Authentication and Authorization",
-            "description": "Comprehensive description",
-            "business_value": "Clear business value",
-            "acceptance_criteria": ["Criteria 1", "Criteria 2"],
-            "priority": "High|Medium|Low",
-            "estimated_story_points": 21,
-            "dependencies": ["External dependencies"],
-            "assumptions": ["Key assumptions"],
-            "risks": ["Identified risks"]
+            "description": "Allow users to securely sign up, login, and manage their credentials.",
+            "business_value": "Improves security and user trust by safeguarding account access.",
+            "acceptance_criteria": [
+            "Scenario 1: User Password Reset Request\nGiven the user is on the login page,\nWhen the user selects 'Forgot Password' and enters a valid email,\nThen the system sends a password reset link to the email.",
+            "Scenario 2: Password Reset Completion\nGiven the user has received the password reset email,\nWhen the user clicks the link and enters a new password,\nThen the password is updated and the user is notified of success."
+            ],
+            "priority": "High",
+            "estimated_story_points": 20,
+            "dependencies": ["User Registration Epic"],
+            "assumptions": ["Email service is reliable"],
+            "risks": ["Potential phishing attacks"]
         }}
     ]
 }}
-
-JSON only:
+Reply ONLY with the JSON object.
 """
         
         try:
@@ -689,17 +756,36 @@ class UserStoryGeneratorAgent:
         epic_context = self._build_epic_context(epics)
         
         story_prompt = f"""
-You are an expert User Story writer for JIRA.
+### Role
+You are an expert User Story writer for JIRA with deep knowledge in Agile and enterprise scaled frameworks.
 
-Context:
-- HLR: "{hlr}"
+### Context
+- High-Level Requirement (HLR): "{hlr}"
 - Additional Context: {context}
 - Q&A Insights: {qa_context}
 - Related Epics: {epic_context}
 
-Generate 5-12 detailed user stories following INVEST principles.
+### Task
+Generate 5 to 12 detailed user stories fully decomposing the HLR and aligned with related epics.
 
-JSON format:
+Each user story MUST include:
+- "title": A concise, user-focused story title.
+- "description": A narrative in the format: "As a [user persona], I want to [action] so that [value]."
+- "user_persona": The primary persona who benefits or acts in the story.
+- "acceptance_criteria": A list of acceptance criteria, each criterion formatted as a single string in GIVEN/WHEN/THEN scenario style.  
+- "definition_of_done": A checklist describing conditions for story completion.
+- "story_points": An integer representing effort estimate.
+- "priority": "High", "Medium", or "Low" indicating business priority.
+- "labels": A list of tags categorizing the story (e.g., "authentication", "frontend").
+- "dependencies": Other stories or tasks that must be completed beforehand.
+- "epic_reference": The title or ID of the related epic, or null if none.
+
+Ensure:
+- All stories follow INVEST criteria (Independent, Negotiable, Valuable, Estimable, Small, Testable).
+- Use Agile and JIRA terminology consistently.
+- JSON output is syntactically valid and parsable.
+
+Example JSON Output format:
 {{
     "user_stories": [
         {{
@@ -707,8 +793,8 @@ JSON format:
             "description": "As a registered user, I want to log in using email and password so that I can access my dashboard",
             "user_persona": "Registered User",
             "acceptance_criteria": [
-                "Given valid credentials, when I login, then I access dashboard",
-                "Given invalid credentials, when I login, then I see error"
+                "Scenario 1: Successful Login\nGiven valid credentials,\nWhen I login,\nThen I access dashboard",
+                "Scenario 2: Login with invalid credentials\nGiven invalid credentials,\nWhen I login,\nThen I see error"
             ],
             "definition_of_done": [
                 "Code implemented and tested",
@@ -724,7 +810,7 @@ JSON format:
     ]
 }}
 
-JSON only:
+Reply ONLY with the JSON object. 
 """
         
         try:
