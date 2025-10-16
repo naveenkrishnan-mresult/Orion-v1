@@ -119,7 +119,7 @@ html, body {
     font-size: 2rem;
     font-weight: 600;
     margin-bottom: 1rem;
-    background: White;
+    background: #E0E0E0;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -147,7 +147,7 @@ html, body {
 
 /* Feature card */
 .stMarkdown .feature-card {
-    background: rgba(255,255,255,0.9);
+    background: #E0E0E0;
     padding: 1rem;
     border-radius: 16px;
     box-shadow: 0 6px 18px rgba(0,0,0,0.1);
@@ -223,8 +223,8 @@ html, body {
 /* Footer */
 .stMarkdown .footer {
     background : #E0E0E0;
-    padding: 2rem 1rem;
-    margin-top: 7rem;
+    padding: 1rem 1rem;
+    margin-top: 10rem;
     text-align: center;
     border-top: 1px solid rgba(44,95,126,0.2);
 }

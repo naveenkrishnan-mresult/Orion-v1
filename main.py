@@ -480,7 +480,7 @@ Context:
 
 {jira_guidance}
 
-Generate 5-7 specific, actionable questions to decompose this HLR.
+Generate 3 specific, actionable questions to decompose this HLR.
 
 Response format (JSON only):
 {{
@@ -676,6 +676,61 @@ JSON only:
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON: {e}")
             raise ValueError(f"Failed to parse JSON: {e}")
+
+class TaskGenerator:
+    """
+    this class the writes task for the jira agent which communicates with jira 
+    """
+    def __init__(self, openai_client: OpenAI,data: List):
+        self.client = openai_client
+        self.model = "gpt-4"
+        self.temperature = 0.3
+        self.json_data=data
+        logger.info("task generator Agent initialized")
+    
+    def _call_openai(self, prompt: str) -> str:
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "you are an expert task generator"},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=self.temperature,
+                max_tokens=3000
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            logger.error(f"OpenAI API error: {e}")
+            raise
+    
+    def _parse_json_response(self, response: str) -> Dict[str, Any]:
+        try:
+            cleaned_response = re.sub(r'```json\n?|\n?```', '', response.strip())
+            return json.loads(cleaned_response)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON response: {e}")
+            raise ValueError(f"Failed to parse JSON response: {e}")
+        
+    def task_generation(self,):
+        Task_generated=f"your task is to convert the human requirment to jira task which will be then used by the jira interaction bot \
+        your task is to convert the human requirmrnt into step instruction that jira bot has to perform  \
+        humam reqirment :i want to create new story for the project with id ORI and my data are \
+                    {self.json_data}"
+        response = self._call_openai(Task_generated)
+        print("response 1================")
+        print(response)
+
+        task_code_generator=f"you are a very good python developer who uses has very good knowledge in jira-pypi library ypur task is to just write executable python code to interact with jira to achive the task given by the user provided authentication is done and connection is established to jira and instance of jira is created in jira_instance , return only the executable code python format with Format of your ouput always and must have final result in variable 'final_response' which will later be used to access the result of executable code do not add in any explanation and return only the executable code as i am directly feeding your response to exec method\
+        the list of tasks :{response}\
+        "
+        response = self._call_openai(task_code_generator)
+        print("code==================================")
+        print(response)
+         
+
+
+        return response
 
 class UserStoryGeneratorAgent:
     def __init__(self, openai_client: OpenAI):
