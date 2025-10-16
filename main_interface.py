@@ -398,8 +398,11 @@ elif st.session_state.step == "jira_issues":
     )
     
     if selected_issue:
-        st.session_state.workflow_state["hlr"] = selected_issue
-        user_message(f"Selected issue: {selected_issue.replace('<br>', ' | ').replace('<b>', '').replace('</b>', '')}")
+        # Extract only the summary part after the dash
+        issue_full = selected_issue.split(' <br> ')[0].replace('Epic: ', '')
+        issue_summary = issue_full.split(' - ', 1)[1] if ' - ' in issue_full else issue_full
+        st.session_state.workflow_state["hlr"] = issue_summary
+        user_message(f"Selected issue: {issue_summary}")
         bot_message("Do you have any additional inputs or context to provide? (e.g., constraints, preferences, specific requirements, technologies, etc.)")
         st.session_state.step = "additional_inputs"
         del st.session_state.issues_loaded
@@ -695,14 +698,36 @@ elif st.session_state.step == "export":
     # Create final output
     clean_output = create_clean_output(st.session_state.workflow_state)
     
-    # Display summary
-    bot_message("<b>Final Summary:</b>")
-    if st.session_state.workflow_state.get("epics"):
-        bot_message(f"✅ {len(st.session_state.workflow_state['epics'])} Epics generated")
-    if st.session_state.workflow_state.get("user_stories"):
-        bot_message(f"✅ {len(st.session_state.workflow_state['user_stories'])} User Stories generated")
+    # Display summary only once
+    # if "summary_displayed" not in st.session_state:
+    #     bot_message("<b>Final Summary:</b>")
+    #     if st.session_state.workflow_state.get("epics"):
+    #         bot_message(f"✅ {len(st.session_state.workflow_state['epics'])} Epics generated")
+    #     if st.session_state.workflow_state.get("user_stories"):
+    #         bot_message(f"✅ {len(st.session_state.workflow_state['user_stories'])} User Stories generated")
+    #     st.session_state.summary_displayed = True
     
-    # Show detailed output
+    # Select items to push to JIRA
+    st.markdown("**Select items to push to JIRA:**")
+    
+    selected_items = []
+    
+    if st.session_state.workflow_state.get("epics"):
+        epic_titles = [f"{i+1}. {epic.get('title', 'Untitled')}" for i, epic in enumerate(st.session_state.workflow_state["epics"])]
+        selected_epics = st.multiselect("Select Epics:", epic_titles, key="epic_select")
+        
+        for selected_epic in selected_epics:
+            epic_idx = int(selected_epic.split(".")[0]) - 1
+            selected_items.append({"type": "epic", "data": st.session_state.workflow_state["epics"][epic_idx]})
+    
+    if st.session_state.workflow_state.get("user_stories"):
+        story_titles = [f"{i+1}. {story.get('title', 'Untitled')}" for i, story in enumerate(st.session_state.workflow_state["user_stories"])]
+        selected_stories = st.multiselect("Select User Stories:", story_titles, key="story_select")
+        
+        for selected_story in selected_stories:
+            story_idx = int(selected_story.split(".")[0]) - 1
+            selected_items.append({"type": "story", "data": st.session_state.workflow_state["user_stories"][story_idx]})
+        # Show detailed output
     with st.expander("📋 Detailed Output", expanded=True):
         if st.session_state.workflow_state.get("epics"):
             st.subheader("Epics")
@@ -729,14 +754,15 @@ elif st.session_state.step == "export":
                         st.write(f"- {criteria}")
                 st.write("---")
     
-    # Download option
-    json_output = json.dumps(clean_output, indent=2)
-    st.download_button(
-        label="📥 Download Results (JSON)",
-        data=json_output,
-        file_name=f"jira_results_{st.session_state.workflow_state.get('session_id', 'export')}.json",
-        mime="application/json"
-    )
+
+    # # Download option
+    # json_output = json.dumps(clean_output, indent=2)
+    # st.download_button(
+    #     label="📥 Download Results (JSON)",
+    #     data=json_output,
+    #     file_name=f"jira_results_{st.session_state.workflow_state.get('session_id', 'export')}.json",
+    #     mime="application/json"
+    # )
     
     if st.button("🔄 Start New Workflow"):
         # Reset session state
@@ -748,30 +774,25 @@ elif st.session_state.step == "export":
             {"role": "bot", "content": "Welcome back! Ready to start a new workflow?"}
         ]
         st.rerun()
-    if st.button("push to jira"):
-        data=json.loads(json_output)
-        print(data)
-     # Extract only title and description
-        stories = data["generated_content"]["user_stories"]
-        filtered_stories = [
-            {k: story[k] for k in ("title", "description") if k in story}
-            for story in stories
-        ]
-
-        print(json.dumps(filtered_stories, indent=2))
-        api_key = os.getenv('OPENAI_API_KEY')
-        if api_key.startswith('"') and api_key.endswith('"'):
-            api_key = api_key[1:-1]
-        openai_client = OpenAI(api_key=api_key)
-        task_generator = TaskGenerator(openai_client,filtered_stories)
-        task_generated =task_generator.task_generation()
-        python_exec_code=(task_generated)
-
-        # loading and exec of the code 
-        # Define the execution context (allowed variables)
-        context = {"jira_instance": jira}
-
-        # Execute multiple lines of code safely inside the context
-        exec(python_exec_code, {}, context)
-        final_response=context.get("final_response")
-        print(final_response)
+    if st.button("Push Selected to JIRA") and selected_items:
+        for item in selected_items:
+            if item["type"] == "story":
+                story_data = [{"title": item["data"].get("title"), "description": item["data"].get("description")}]
+                
+                api_key = os.getenv('OPENAI_API_KEY')
+                if api_key.startswith('"') and api_key.endswith('"'):
+                    api_key = api_key[1:-1]
+                openai_client = OpenAI(api_key=api_key)
+                task_generator = TaskGenerator(openai_client, story_data)
+                task_generated = task_generator.task_generation()
+                
+                context = {"jira_instance": jira}
+                exec(task_generated, {}, context)
+                final_response = context.get("final_response")
+                
+                if final_response:
+                    bot_message(f"✅ Successfully pushed '{item['data'].get('title')}' to JIRA")
+                else:
+                    bot_message(f"❌ Failed to push '{item['data'].get('title')}' to JIRA")
+        
+        st.rerun()
