@@ -360,7 +360,7 @@ if st.session_state.show_popup:
         align-items: center;
     ">
     <!-- Close button outside modal -->
-    <form method="get" style="position:absolute; top:15px; right:320px; z-index: 10001;">
+    <form method="get" style="position:absolute; top:40px; right:35px; z-index: 10001;">
         <button type="submit" name="close_popup" value="true"
             style="
                 border:none;
