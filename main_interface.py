@@ -706,28 +706,7 @@ elif st.session_state.step == "export":
     #     if st.session_state.workflow_state.get("user_stories"):
     #         bot_message(f"✅ {len(st.session_state.workflow_state['user_stories'])} User Stories generated")
     #     st.session_state.summary_displayed = True
-    
-    # Select items to push to JIRA
-    st.markdown("**Select items to push to JIRA:**")
-    
-    selected_items = []
-    
-    if st.session_state.workflow_state.get("epics"):
-        epic_titles = [f"{i+1}. {epic.get('title', 'Untitled')}" for i, epic in enumerate(st.session_state.workflow_state["epics"])]
-        selected_epics = st.multiselect("Select Epics:", epic_titles, key="epic_select")
-        
-        for selected_epic in selected_epics:
-            epic_idx = int(selected_epic.split(".")[0]) - 1
-            selected_items.append({"type": "epic", "data": st.session_state.workflow_state["epics"][epic_idx]})
-    
-    if st.session_state.workflow_state.get("user_stories"):
-        story_titles = [f"{i+1}. {story.get('title', 'Untitled')}" for i, story in enumerate(st.session_state.workflow_state["user_stories"])]
-        selected_stories = st.multiselect("Select User Stories:", story_titles, key="story_select")
-        
-        for selected_story in selected_stories:
-            story_idx = int(selected_story.split(".")[0]) - 1
-            selected_items.append({"type": "story", "data": st.session_state.workflow_state["user_stories"][story_idx]})
-        # Show detailed output
+    # Show detailed output
     with st.expander("📋 Detailed Output", expanded=True):
         if st.session_state.workflow_state.get("epics"):
             st.subheader("Epics")
@@ -754,6 +733,25 @@ elif st.session_state.step == "export":
                         st.write(f"- {criteria}")
                 st.write("---")
     
+    # Select items to push to JIRA
+    st.markdown("**Select items to push to JIRA:**")
+    selected_items = []
+    if st.session_state.workflow_state.get("epics"):
+        epic_titles = [f"{i+1}. {epic.get('title', 'Untitled')}" for i, epic in enumerate(st.session_state.workflow_state["epics"])]
+        selected_epics = st.multiselect("Select Epics:", epic_titles, key="epic_select")
+        
+        for selected_epic in selected_epics:
+            epic_idx = int(selected_epic.split(".")[0]) - 1
+            selected_items.append({"type": "epic", "data": st.session_state.workflow_state["epics"][epic_idx]})
+    
+    if st.session_state.workflow_state.get("user_stories"):
+        story_titles = [f"{i+1}. {story.get('title', 'Untitled')}" for i, story in enumerate(st.session_state.workflow_state["user_stories"])]
+        selected_stories = st.multiselect("Select User Stories:", story_titles, key="story_select")
+        
+        for selected_story in selected_stories:
+            story_idx = int(selected_story.split(".")[0]) - 1
+            selected_items.append({"type": "story", "data": st.session_state.workflow_state["user_stories"][story_idx]})
+        
 
     # # Download option
     # json_output = json.dumps(clean_output, indent=2)
