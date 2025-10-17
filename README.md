@@ -34,7 +34,7 @@ streamlit run landing.py
 
 ### Method 2: Direct Access
 ```bash
-streamlit run main_interface.py
+streamlit run router.py
 ```
 **Access:** http://localhost:8501 (direct workflow interface)
 

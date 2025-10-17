@@ -1,4 +1,0 @@
-{
-  "allowed_projects": ["BU25MVP", "ORI"],
-  "description": "List of JIRA project keys that users can access"
-}
